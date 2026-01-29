@@ -167,38 +167,53 @@ class AppViewModel: ObservableObject {
         let parser = ChatParser()
         let dbManager = self.dbManager
 
-        // Start security-scoped access for sandboxed file access
+        // Copy file to temp while security access is active (quick operation)
         let didStartAccess = url.startAccessingSecurityScopedResource()
+        let tempDir = FileManager.default.temporaryDirectory
+        let tempZip = tempDir.appendingPathComponent(UUID().uuidString + ".zip")
 
-        Task { @MainActor [weak self] in
-            guard let self else {
-                if didStartAccess { url.stopAccessingSecurityScopedResource() }
-                return
-            }
+        do {
+            try FileManager.default.copyItem(at: url, to: tempZip)
+        } catch {
+            print("Failed to copy file: \(error)")
+            if didStartAccess { url.stopAccessingSecurityScopedResource() }
+            return
+        }
 
+        // Release security access immediately - we have the copy now
+        if didStartAccess {
+            url.stopAccessingSecurityScopedResource()
+        }
+
+        // Extract contact name from original URL
+        let filename = url.deletingPathExtension().lastPathComponent
+        let contactName = filename.replacingOccurrences(of: "WhatsApp Chat - ", with: "")
+
+        // Show initial progress
+        self.importProgress = ImportProgress(contactName: contactName, current: 0, total: 0)
+
+        // Do all heavy work on background thread
+        Task.detached { [weak self] in
             defer {
-                if didStartAccess {
-                    url.stopAccessingSecurityScopedResource()
-                }
+                try? FileManager.default.removeItem(at: tempZip)
             }
 
             do {
-                // Parse file (must happen while security access is active)
-                let parseResult = try parser.parseZipFile(at: url)
-                let contactName = parseResult.contactName
-                let parsed = parseResult.messages
+                // Parse on background
+                let parsed = parser.parseTempZipFile(at: tempZip)
 
-                self.importProgress = ImportProgress(contactName: contactName, current: 0, total: parsed.count)
+                await MainActor.run {
+                    self?.importProgress = ImportProgress(contactName: contactName, current: 0, total: parsed.count)
+                }
 
-                // Create or get contact on background
-                let contact: Contact = try await Task.detached {
-                    if let existing = try dbManager.getContactByName(contactName) {
-                        return existing
-                    } else {
-                        let id = try dbManager.insertContact(Contact(name: contactName))
-                        return Contact(id: id, name: contactName)
-                    }
-                }.value
+                // Create or get contact
+                let contact: Contact
+                if let existing = try dbManager.getContactByName(contactName) {
+                    contact = existing
+                } else {
+                    let id = try dbManager.insertContact(Contact(name: contactName))
+                    contact = Contact(id: id, name: contactName)
+                }
 
                 // Convert messages
                 let messages = parser.convertToMessages(
@@ -207,21 +222,23 @@ class AppViewModel: ObservableObject {
                     contactName: contactName
                 )
 
-                // Insert on background with progress callback
-                try await Task.detached {
-                    try dbManager.insertMessages(messages) { current, total in
-                        Task { @MainActor in
-                            self.importProgress = ImportProgress(contactName: contactName, current: current, total: total)
-                        }
+                // Insert with progress callback
+                try dbManager.insertMessages(messages) { current, total in
+                    Task { @MainActor in
+                        self?.importProgress = ImportProgress(contactName: contactName, current: current, total: total)
                     }
-                }.value
+                }
 
-                self.importProgress = nil
-                self.loadContacts()
-                print("Imported \(messages.count) messages for \(contactName)")
+                await MainActor.run {
+                    self?.importProgress = nil
+                    self?.loadContacts()
+                    print("Imported \(messages.count) messages for \(contactName)")
+                }
             } catch {
-                self.importProgress = nil
-                print("Import failed: \(error)")
+                await MainActor.run {
+                    self?.importProgress = nil
+                    print("Import failed: \(error)")
+                }
             }
         }
     }

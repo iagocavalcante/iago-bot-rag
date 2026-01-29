@@ -29,17 +29,18 @@ class ChatParser {
         return (contactName, messages)
     }
 
-    private func extractChatFromZip(_ zipUrl: URL) throws -> String {
-        // Copy to temp directory to avoid sandbox issues with Process
-        let tempDir = FileManager.default.temporaryDirectory
-        let tempZip = tempDir.appendingPathComponent(UUID().uuidString + ".zip")
-
-        defer {
-            try? FileManager.default.removeItem(at: tempZip)
+    /// Parse a zip file that's already in temp directory (no copy needed)
+    func parseTempZipFile(at tempZip: URL) -> [ParsedMessage] {
+        do {
+            let chatContent = try extractFromTempZip(tempZip)
+            return parseChat(chatContent)
+        } catch {
+            print("Parse error: \(error)")
+            return []
         }
+    }
 
-        try FileManager.default.copyItem(at: zipUrl, to: tempZip)
-
+    private func extractFromTempZip(_ tempZip: URL) throws -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
         process.arguments = ["-p", tempZip.path, "_chat.txt"]
@@ -56,6 +57,19 @@ class ChatParser {
             throw ParserError.invalidEncoding
         }
         return content
+    }
+
+    private func extractChatFromZip(_ zipUrl: URL) throws -> String {
+        // Copy to temp directory to avoid sandbox issues with Process
+        let tempDir = FileManager.default.temporaryDirectory
+        let tempZip = tempDir.appendingPathComponent(UUID().uuidString + ".zip")
+
+        defer {
+            try? FileManager.default.removeItem(at: tempZip)
+        }
+
+        try FileManager.default.copyItem(at: zipUrl, to: tempZip)
+        return try extractFromTempZip(tempZip)
     }
 
     func parseChat(_ content: String) -> [ParsedMessage] {
