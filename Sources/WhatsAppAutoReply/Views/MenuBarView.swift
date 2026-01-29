@@ -5,6 +5,7 @@ struct MenuBarView: View {
     @StateObject private var viewModel = AppViewModel()
     @State private var showingImporter = false
     @State private var showingLog = false
+    @State private var showingDebugLog = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -108,6 +109,10 @@ struct MenuBarView: View {
                 showingLog = true
             }
 
+            Button("View Debug Log (\(viewModel.debugLog.count))") {
+                showingDebugLog = true
+            }
+
             Divider()
 
             Button("Quit") {
@@ -127,6 +132,9 @@ struct MenuBarView: View {
         }
         .sheet(isPresented: $showingLog) {
             ResponseLogView(entries: viewModel.responseLog)
+        }
+        .sheet(isPresented: $showingDebugLog) {
+            DebugLogView(entries: viewModel.debugLog)
         }
     }
 }
@@ -220,5 +228,55 @@ struct ResponseLogView: View {
             }
         }
         .frame(width: 400, height: 300)
+    }
+}
+
+struct DebugLogView: View {
+    let entries: [AppViewModel.DebugLogEntry]
+    @Environment(\.dismiss) var dismiss
+
+    private let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss.SSS"
+        return f
+    }()
+
+    var body: some View {
+        VStack {
+            HStack {
+                Text("Debug Log")
+                    .font(.headline)
+                Spacer()
+                Button("Close") { dismiss() }
+            }
+            .padding()
+
+            if entries.isEmpty {
+                Text("No log entries yet")
+                    .foregroundColor(.secondary)
+                    .padding()
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        ForEach(entries) { entry in
+                            HStack(alignment: .top, spacing: 8) {
+                                Text(timeFormatter.string(from: entry.timestamp))
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                                Text(entry.message)
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundColor(entry.isError ? .red : .primary)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(entry.isError ? Color.red.opacity(0.1) : Color.clear)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+        }
+        .frame(width: 500, height: 400)
     }
 }

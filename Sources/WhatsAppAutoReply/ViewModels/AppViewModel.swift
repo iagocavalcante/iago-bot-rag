@@ -9,6 +9,21 @@ class AppViewModel: ObservableObject {
     @Published var pendingResponse: PendingResponse?
     @Published var responseLog: [ResponseLogEntry] = []
     @Published var importProgress: ImportProgress?
+    @Published var debugLog: [DebugLogEntry] = []
+
+    struct DebugLogEntry: Identifiable {
+        let id = UUID()
+        let timestamp: Date
+        let message: String
+        let isError: Bool
+    }
+
+    func log(_ message: String, isError: Bool = false) {
+        let entry = DebugLogEntry(timestamp: Date(), message: message, isError: isError)
+        debugLog.insert(entry, at: 0)
+        if debugLog.count > 100 { debugLog.removeLast() }
+        print("[\(isError ? "ERROR" : "DEBUG")] \(message)")
+    }
 
     struct ImportProgress {
         let contactName: String
@@ -164,18 +179,23 @@ class AppViewModel: ObservableObject {
     }
 
     func importChatExport(url: URL) {
+        log("Starting import for: \(url.lastPathComponent)")
+
         let parser = ChatParser()
         let dbManager = self.dbManager
 
         // Copy file to temp while security access is active (quick operation)
         let didStartAccess = url.startAccessingSecurityScopedResource()
+        log("Security scoped access: \(didStartAccess)")
+
         let tempDir = FileManager.default.temporaryDirectory
         let tempZip = tempDir.appendingPathComponent(UUID().uuidString + ".zip")
 
         do {
             try FileManager.default.copyItem(at: url, to: tempZip)
+            log("Copied to temp: \(tempZip.path)")
         } catch {
-            print("Failed to copy file: \(error)")
+            log("Failed to copy file: \(error)", isError: true)
             if didStartAccess { url.stopAccessingSecurityScopedResource() }
             return
         }
@@ -188,21 +208,38 @@ class AppViewModel: ObservableObject {
         // Extract contact name from original URL
         let filename = url.deletingPathExtension().lastPathComponent
         let contactName = filename.replacingOccurrences(of: "WhatsApp Chat - ", with: "")
+        log("Contact name: \(contactName)")
 
         // Show initial progress
         self.importProgress = ImportProgress(contactName: contactName, current: 0, total: 0)
 
+        // Capture self for logging
+        let logFunc: @Sendable (String, Bool) -> Void = { [weak self] msg, isErr in
+            Task { @MainActor in
+                self?.log(msg, isError: isErr)
+            }
+        }
+
         // Do all heavy work on background thread
-        Task.detached { [weak self] in
+        Task.detached {
             defer {
                 try? FileManager.default.removeItem(at: tempZip)
             }
 
             do {
-                // Parse on background
-                let parsed = parser.parseTempZipFile(at: tempZip)
+                logFunc("Starting parse...", false)
 
-                await MainActor.run {
+                // Parse on background
+                let (parsed, parseLog) = parser.parseTempZipFileWithLog(at: tempZip)
+
+                // Forward parser logs
+                for entry in parseLog {
+                    logFunc(entry, false)
+                }
+
+                logFunc("Parsed \(parsed.count) messages", false)
+
+                await MainActor.run { [weak self] in
                     self?.importProgress = ImportProgress(contactName: contactName, current: 0, total: parsed.count)
                 }
 
@@ -210,9 +247,11 @@ class AppViewModel: ObservableObject {
                 let contact: Contact
                 if let existing = try dbManager.getContactByName(contactName) {
                     contact = existing
+                    logFunc("Found existing contact: \(existing.name)", false)
                 } else {
                     let id = try dbManager.insertContact(Contact(name: contactName))
                     contact = Contact(id: id, name: contactName)
+                    logFunc("Created new contact: \(contactName)", false)
                 }
 
                 // Convert messages
@@ -221,23 +260,24 @@ class AppViewModel: ObservableObject {
                     contactId: contact.id,
                     contactName: contactName
                 )
+                logFunc("Converted \(messages.count) messages", false)
 
                 // Insert with progress callback
                 try dbManager.insertMessages(messages) { current, total in
-                    Task { @MainActor in
+                    Task { @MainActor [weak self] in
                         self?.importProgress = ImportProgress(contactName: contactName, current: current, total: total)
                     }
                 }
 
-                await MainActor.run {
+                await MainActor.run { [weak self] in
                     self?.importProgress = nil
                     self?.loadContacts()
-                    print("Imported \(messages.count) messages for \(contactName)")
+                    self?.log("Import complete: \(messages.count) messages for \(contactName)")
                 }
             } catch {
-                await MainActor.run {
+                logFunc("Import failed: \(error)", true)
+                await MainActor.run { [weak self] in
                     self?.importProgress = nil
-                    print("Import failed: \(error)")
                 }
             }
         }

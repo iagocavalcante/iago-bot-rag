@@ -50,6 +50,34 @@ class ChatParser {
         }
     }
 
+    /// Parse with logging for debugging
+    func parseTempZipFileWithLog(at tempZip: URL) -> ([ParsedMessage], [String]) {
+        var log: [String] = []
+        log.append("Temp zip path: \(tempZip.path)")
+        log.append("File exists: \(FileManager.default.fileExists(atPath: tempZip.path))")
+
+        do {
+            let chatContent = try extractFromTempZip(tempZip)
+            log.append("Extracted content length: \(chatContent.count) chars")
+
+            // Show first few lines for debugging
+            let lines = chatContent.components(separatedBy: .newlines)
+            log.append("Total lines: \(lines.count)")
+            if let firstLine = lines.first {
+                let preview = String(firstLine.prefix(80))
+                log.append("First line: \(preview)")
+            }
+
+            let messages = parseChat(chatContent)
+            log.append("Parsed messages: \(messages.count)")
+
+            return (messages, log)
+        } catch {
+            log.append("Parse error: \(error)")
+            return ([], log)
+        }
+    }
+
     private func extractFromTempZip(_ tempZip: URL) throws -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
