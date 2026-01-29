@@ -88,7 +88,7 @@ class WhatsAppMonitor: ObservableObject {
         }
     }
 
-    /// Dump accessibility tree for debugging
+    /// Dump accessibility tree for debugging - shows more elements
     func dumpAccessibilityTree() -> String {
         guard let window = AccessibilityHelper.findWhatsAppWindow() else {
             return "WhatsApp window not found"
@@ -98,16 +98,16 @@ class WhatsAppMonitor: ObservableObject {
         var allTexts: [(role: String, text: String, depth: Int)] = []
 
         func dumpElement(_ element: AXUIElement, depth: Int = 0) {
-            guard depth < 10 else { return }
+            guard depth < 12 else { return }
 
             let role = AccessibilityHelper.getRole(element) ?? "?"
             let value = AccessibilityHelper.getValue(element)
             let title = AccessibilityHelper.getTitle(element)
             let desc = AccessibilityHelper.getDescription(element)
 
-            let text = value ?? title ?? desc
-            if let t = text, !t.isEmpty {
-                allTexts.append((role, t, depth))
+            let text = cleanText(value ?? title ?? desc ?? "")
+            if !text.isEmpty {
+                allTexts.append((role, text, depth))
             }
 
             for child in AccessibilityHelper.getChildren(element) {
@@ -117,10 +117,10 @@ class WhatsAppMonitor: ObservableObject {
 
         dumpElement(window)
 
-        // Show unique text elements found
-        for (role, text, depth) in allTexts.prefix(50) {
+        // Show all text elements found (more for debugging)
+        for (role, text, depth) in allTexts.prefix(80) {
             let indent = String(repeating: "  ", count: depth)
-            let preview = String(text.prefix(60)).replacingOccurrences(of: "\n", with: "\\n")
+            let preview = String(text.prefix(70)).replacingOccurrences(of: "\n", with: "\\n")
             output += "\(indent)[\(role)] \(preview)\n"
         }
 
@@ -144,16 +144,22 @@ class WhatsAppMonitor: ObservableObject {
     }
 
     private func findLastMessage(in window: AXUIElement) -> (contactName: String, message: String)? {
-        // WhatsApp Desktop accessibility structure (2024+):
-        // - Contact name: AXButton with "Message from <Name>," or "<Name>,"
-        // - Incoming messages: AXButton/AXStaticText starting with "message, <content>"
-        // - User messages: AXButton/AXStaticText starting with "Your message, <content>"
-        // NOTE: WhatsApp adds invisible Unicode markers (LTR marks) that we need to strip
+        // WhatsApp Desktop has two areas:
+        // 1. Sidebar (chat list) - shows "Message from X" for each chat
+        // 2. Main chat area - shows the active conversation
+        //
+        // We need the ACTIVE chat, which is identified by:
+        // - Looking for the chat header (contact name at top of conversation)
+        // - Finding messages in that conversation
+        //
+        // The active chat header appears as a clickable element with just the name
+        // Messages appear with "message, <content>" prefix
 
         var contactName: String?
         var lastIncomingMessage: String?
-        var allTexts: [(text: String, role: String)] = []
+        var allTexts: [(text: String, role: String, depth: Int)] = []
 
+        // First pass: collect all text elements
         func searchElement(_ element: AXUIElement, depth: Int = 0) {
             guard depth < 15 else { return }
 
@@ -163,26 +169,7 @@ class WhatsAppMonitor: ObservableObject {
 
             if let rawText = value ?? title, !rawText.isEmpty {
                 let text = cleanText(rawText)
-                allTexts.append((text, role))
-
-                // Extract contact name from "Message from <Name>," pattern
-                if text.hasPrefix("Message from ") {
-                    let nameStart = text.index(text.startIndex, offsetBy: 13) // "Message from ".count
-                    let rest = String(text[nameStart...])
-                    if let commaIndex = rest.firstIndex(of: ",") {
-                        contactName = String(rest[..<commaIndex])
-                    }
-                }
-
-                // Extract incoming message (not "Your message")
-                // Format: "message, <actual message content>"
-                if text.hasPrefix("message, ") && !text.contains("Your message") {
-                    let msgStart = text.index(text.startIndex, offsetBy: 9) // "message, ".count
-                    let content = String(text[msgStart...])
-                    if content.count > 1 {
-                        lastIncomingMessage = content
-                    }
-                }
+                allTexts.append((text, role, depth))
             }
 
             for child in AccessibilityHelper.getChildren(element) {
@@ -192,10 +179,60 @@ class WhatsAppMonitor: ObservableObject {
 
         searchElement(window)
 
+        // Find the active chat header - it's usually a heading or button with just a name
+        // that appears BEFORE the messages in the tree traversal
+        // Look for AXHeading or AXStaticText that's a short name (not a message)
+        for (text, role, _) in allTexts {
+            // Skip sidebar items which have "Message from" prefix
+            if text.hasPrefix("Message from ") { continue }
+            // Skip messages
+            if text.hasPrefix("message, ") || text.hasPrefix("Your message") { continue }
+            // Skip UI elements
+            if text.contains("WhatsApp") || text == "Chats" { continue }
+            if text.hasPrefix("Ask Meta") { continue }
+            if ["All", "Unread", "Favorites", "Groups"].contains(text) { continue }
+            if text.contains(" of ") { continue } // "1 of 4" etc
+
+            // Look for heading role which is typically the chat header
+            if role == "AXHeading" && text.count > 1 && text.count < 50 {
+                contactName = text
+                break
+            }
+        }
+
+        // If no heading found, try to find from "Message from" but get the FIRST one
+        // (which is likely the selected/active chat)
+        if contactName == nil {
+            for (text, _, _) in allTexts {
+                if text.hasPrefix("Message from ") {
+                    let nameStart = text.index(text.startIndex, offsetBy: 13)
+                    let rest = String(text[nameStart...])
+                    if let commaIndex = rest.firstIndex(of: ",") {
+                        contactName = String(rest[..<commaIndex])
+                        break
+                    }
+                }
+            }
+        }
+
+        // Find the LAST incoming message (most recent)
+        for (text, _, _) in allTexts.reversed() {
+            if text.hasPrefix("message, ") && !text.contains("Your message") {
+                let msgStart = text.index(text.startIndex, offsetBy: 9)
+                let content = String(text[msgStart...])
+                if content.count > 1 {
+                    lastIncomingMessage = content
+                    break
+                }
+            }
+        }
+
         // Debug: print what we found
         if contactName == nil || lastIncomingMessage == nil {
-            let sample = allTexts.prefix(10).map { "[\($0.role)] \($0.text.prefix(30))" }.joined(separator: ", ")
+            let sample = allTexts.prefix(15).map { "[\($0.role)] \($0.text.prefix(25))" }.joined(separator: ", ")
             debugLog("Tree sample: \(sample)")
+        } else {
+            debugLog("Found: '\(contactName!)' -> '\(lastIncomingMessage!.prefix(50))...'")
         }
 
         if let name = contactName, let message = lastIncomingMessage {
