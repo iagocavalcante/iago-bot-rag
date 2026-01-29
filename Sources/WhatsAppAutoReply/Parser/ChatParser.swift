@@ -88,9 +88,13 @@ class ChatParser {
         process.standardError = FileHandle.nullDevice
 
         try process.run()
+
+        // IMPORTANT: Read data BEFORE waitUntilExit to avoid pipe buffer deadlock
+        // When output is large, pipe fills up (64KB), process blocks, but we'd be waiting for exit
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+
         process.waitUntilExit()
 
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
         guard let content = String(data: data, encoding: .utf8) else {
             throw ParserError.invalidEncoding
         }
