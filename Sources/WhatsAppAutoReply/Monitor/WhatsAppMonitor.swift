@@ -127,11 +127,28 @@ class WhatsAppMonitor: ObservableObject {
         return output
     }
 
+    /// Strip invisible Unicode characters (LTR/RTL marks, etc.)
+    private func cleanText(_ text: String) -> String {
+        // Remove common invisible Unicode characters used by WhatsApp
+        var cleaned = text
+        let invisibleChars: [Character] = [
+            "\u{200E}", // Left-to-Right Mark
+            "\u{200F}", // Right-to-Left Mark
+            "\u{200B}", // Zero Width Space
+            "\u{FEFF}", // BOM
+        ]
+        for char in invisibleChars {
+            cleaned = cleaned.replacingOccurrences(of: String(char), with: "")
+        }
+        return cleaned.trimmingCharacters(in: .whitespaces)
+    }
+
     private func findLastMessage(in window: AXUIElement) -> (contactName: String, message: String)? {
         // WhatsApp Desktop accessibility structure (2024+):
         // - Contact name: AXButton with "Message from <Name>," or "<Name>,"
         // - Incoming messages: AXButton/AXStaticText starting with "message, <content>"
         // - User messages: AXButton/AXStaticText starting with "Your message, <content>"
+        // NOTE: WhatsApp adds invisible Unicode markers (LTR marks) that we need to strip
 
         var contactName: String?
         var lastIncomingMessage: String?
@@ -144,7 +161,8 @@ class WhatsAppMonitor: ObservableObject {
             let value = AccessibilityHelper.getValue(element)
             let title = AccessibilityHelper.getTitle(element)
 
-            if let text = value ?? title, !text.isEmpty {
+            if let rawText = value ?? title, !rawText.isEmpty {
+                let text = cleanText(rawText)
                 allTexts.append((text, role))
 
                 // Extract contact name from "Message from <Name>," pattern
@@ -158,17 +176,8 @@ class WhatsAppMonitor: ObservableObject {
 
                 // Extract incoming message (not "Your message")
                 // Format: "message, <actual message content>"
-                if text.hasPrefix("message, ") && !text.hasPrefix("Your message") {
+                if text.hasPrefix("message, ") && !text.contains("Your message") {
                     let msgStart = text.index(text.startIndex, offsetBy: 9) // "message, ".count
-                    let content = String(text[msgStart...])
-                    if content.count > 1 {
-                        lastIncomingMessage = content
-                    }
-                }
-
-                // Also check for standalone "message," format (AXStaticText)
-                if role == "AXStaticText" && text.hasPrefix("message, ") {
-                    let msgStart = text.index(text.startIndex, offsetBy: 9)
                     let content = String(text[msgStart...])
                     if content.count > 1 {
                         lastIncomingMessage = content
