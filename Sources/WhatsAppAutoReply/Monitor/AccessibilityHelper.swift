@@ -1,0 +1,89 @@
+import ApplicationServices
+import AppKit
+
+class AccessibilityHelper {
+
+    static func checkAccessibilityPermission() -> Bool {
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
+        return AXIsProcessTrustedWithOptions(options)
+    }
+
+    static func findWhatsAppWindow() -> AXUIElement? {
+        let apps = NSWorkspace.shared.runningApplications
+        guard let whatsApp = apps.first(where: { $0.bundleIdentifier == "net.whatsapp.WhatsApp" }) else {
+            return nil
+        }
+
+        let appElement = AXUIElementCreateApplication(whatsApp.processIdentifier)
+
+        var windowsValue: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsValue)
+
+        guard result == .success,
+              let windows = windowsValue as? [AXUIElement],
+              let mainWindow = windows.first else {
+            return nil
+        }
+
+        return mainWindow
+    }
+
+    static func getElementValue(_ element: AXUIElement, attribute: String) -> Any? {
+        var value: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
+        return result == .success ? value : nil
+    }
+
+    static func getChildren(_ element: AXUIElement) -> [AXUIElement] {
+        var childrenValue: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenValue)
+
+        guard result == .success, let children = childrenValue as? [AXUIElement] else {
+            return []
+        }
+        return children
+    }
+
+    static func getRole(_ element: AXUIElement) -> String? {
+        getElementValue(element, attribute: kAXRoleAttribute as String) as? String
+    }
+
+    static func getValue(_ element: AXUIElement) -> String? {
+        getElementValue(element, attribute: kAXValueAttribute as String) as? String
+    }
+
+    static func getTitle(_ element: AXUIElement) -> String? {
+        getElementValue(element, attribute: kAXTitleAttribute as String) as? String
+    }
+
+    static func getDescription(_ element: AXUIElement) -> String? {
+        getElementValue(element, attribute: kAXDescriptionAttribute as String) as? String
+    }
+
+    static func setFocus(_ element: AXUIElement) {
+        AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, true as CFTypeRef)
+    }
+
+    static func typeText(_ text: String) {
+        for char in text {
+            let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true)
+            let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false)
+
+            var unicodeChar = Array(String(char).utf16)
+            keyDown?.keyboardSetUnicodeString(stringLength: unicodeChar.count, unicodeString: &unicodeChar)
+            keyUp?.keyboardSetUnicodeString(stringLength: unicodeChar.count, unicodeString: &unicodeChar)
+
+            keyDown?.post(tap: .cghidEventTap)
+            keyUp?.post(tap: .cghidEventTap)
+
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+    }
+
+    static func pressEnter() {
+        let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: 36, keyDown: true)
+        let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: 36, keyDown: false)
+        keyDown?.post(tap: .cghidEventTap)
+        keyUp?.post(tap: .cghidEventTap)
+    }
+}
