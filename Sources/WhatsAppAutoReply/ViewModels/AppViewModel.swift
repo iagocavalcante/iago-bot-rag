@@ -167,13 +167,26 @@ class AppViewModel: ObservableObject {
         let parser = ChatParser()
         let dbManager = self.dbManager
 
+        // Start security-scoped access for sandboxed file access
+        let didStartAccess = url.startAccessingSecurityScopedResource()
+
         Task { @MainActor [weak self] in
-            guard let self else { return }
+            guard let self else {
+                if didStartAccess { url.stopAccessingSecurityScopedResource() }
+                return
+            }
+
+            defer {
+                if didStartAccess {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
 
             do {
-                let (contactName, parsed) = try await Task.detached {
-                    try parser.parseZipFile(at: url)
-                }.value
+                // Parse file (must happen while security access is active)
+                let parseResult = try parser.parseZipFile(at: url)
+                let contactName = parseResult.contactName
+                let parsed = parseResult.messages
 
                 self.importProgress = ImportProgress(contactName: contactName, current: 0, total: parsed.count)
 

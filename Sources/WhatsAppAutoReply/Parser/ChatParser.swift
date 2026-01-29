@@ -30,9 +30,19 @@ class ChatParser {
     }
 
     private func extractChatFromZip(_ zipUrl: URL) throws -> String {
+        // Copy to temp directory to avoid sandbox issues with Process
+        let tempDir = FileManager.default.temporaryDirectory
+        let tempZip = tempDir.appendingPathComponent(UUID().uuidString + ".zip")
+
+        defer {
+            try? FileManager.default.removeItem(at: tempZip)
+        }
+
+        try FileManager.default.copyItem(at: zipUrl, to: tempZip)
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
-        process.arguments = ["-p", zipUrl.path, "_chat.txt"]
+        process.arguments = ["-p", tempZip.path, "_chat.txt"]
 
         let pipe = Pipe()
         process.standardOutput = pipe
