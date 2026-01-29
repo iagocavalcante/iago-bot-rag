@@ -95,7 +95,7 @@ class WhatsAppMonitor: ObservableObject {
         }
 
         var output = "WhatsApp Accessibility Tree:\n"
-        var allTexts: [(role: String, text: String, depth: Int)] = []
+        var allElements: [(role: String, text: String, depth: Int, selected: Bool, focused: Bool)] = []
 
         func dumpElement(_ element: AXUIElement, depth: Int = 0) {
             guard depth < 12 else { return }
@@ -104,10 +104,12 @@ class WhatsAppMonitor: ObservableObject {
             let value = AccessibilityHelper.getValue(element)
             let title = AccessibilityHelper.getTitle(element)
             let desc = AccessibilityHelper.getDescription(element)
+            let selected = AccessibilityHelper.isSelected(element)
+            let focused = AccessibilityHelper.isFocused(element)
 
             let text = cleanText(value ?? title ?? desc ?? "")
-            if !text.isEmpty {
-                allTexts.append((role, text, depth))
+            if !text.isEmpty || selected || focused {
+                allElements.append((role, text, depth, selected, focused))
             }
 
             for child in AccessibilityHelper.getChildren(element) {
@@ -117,11 +119,14 @@ class WhatsAppMonitor: ObservableObject {
 
         dumpElement(window)
 
-        // Show all text elements found (more for debugging)
-        for (role, text, depth) in allTexts.prefix(80) {
+        // Show all elements found
+        for (role, text, depth, selected, focused) in allElements.prefix(100) {
             let indent = String(repeating: "  ", count: depth)
-            let preview = String(text.prefix(70)).replacingOccurrences(of: "\n", with: "\\n")
-            output += "\(indent)[\(role)] \(preview)\n"
+            let preview = String(text.prefix(60)).replacingOccurrences(of: "\n", with: "\\n")
+            var flags = ""
+            if selected { flags += " [SEL]" }
+            if focused { flags += " [FOC]" }
+            output += "\(indent)[\(role)]\(flags) \(preview)\n"
         }
 
         return output

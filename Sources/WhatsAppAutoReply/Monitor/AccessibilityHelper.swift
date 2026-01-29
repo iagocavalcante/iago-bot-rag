@@ -60,6 +60,18 @@ class AccessibilityHelper {
         getElementValue(element, attribute: kAXDescriptionAttribute as String) as? String
     }
 
+    static func isSelected(_ element: AXUIElement) -> Bool {
+        getElementValue(element, attribute: kAXSelectedAttribute as String) as? Bool ?? false
+    }
+
+    static func isFocused(_ element: AXUIElement) -> Bool {
+        getElementValue(element, attribute: kAXFocusedAttribute as String) as? Bool ?? false
+    }
+
+    static func getIdentifier(_ element: AXUIElement) -> String? {
+        getElementValue(element, attribute: kAXIdentifierAttribute as String) as? String
+    }
+
     static func setFocus(_ element: AXUIElement) {
         AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, true as CFTypeRef)
     }
