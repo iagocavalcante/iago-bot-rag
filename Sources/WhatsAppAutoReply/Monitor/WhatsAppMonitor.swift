@@ -149,22 +149,19 @@ class WhatsAppMonitor: ObservableObject {
     }
 
     private func findLastMessage(in window: AXUIElement) -> (contactName: String, message: String)? {
-        // WhatsApp Desktop has two areas:
-        // 1. Sidebar (chat list) - shows "Message from X" for each chat
-        // 2. Main chat area - shows the active conversation
+        // WhatsApp Desktop message patterns (2024+):
         //
-        // We need the ACTIVE chat, which is identified by:
-        // - Looking for the chat header (contact name at top of conversation)
-        // - Finding messages in that conversation
+        // ACTIVE CHAT messages format:
+        //   "message, <content>, <time>, Received from <Name>"
+        //   "Your message, <content>, <time>, Sent to <Name>"
         //
-        // The active chat header appears as a clickable element with just the name
-        // Messages appear with "message, <content>" prefix
+        // SIDEBAR format (different):
+        //   "Message from <Name>, <preview>"
+        //
+        // We want ACTIVE CHAT messages that have "Received from" at the end
 
-        var contactName: String?
-        var lastIncomingMessage: String?
-        var allTexts: [(text: String, role: String, depth: Int)] = []
+        var allTexts: [(text: String, role: String)] = []
 
-        // First pass: collect all text elements
         func searchElement(_ element: AXUIElement, depth: Int = 0) {
             guard depth < 15 else { return }
 
@@ -174,7 +171,7 @@ class WhatsAppMonitor: ObservableObject {
 
             if let rawText = value ?? title, !rawText.isEmpty {
                 let text = cleanText(rawText)
-                allTexts.append((text, role, depth))
+                allTexts.append((text, role))
             }
 
             for child in AccessibilityHelper.getChildren(element) {
@@ -184,60 +181,61 @@ class WhatsAppMonitor: ObservableObject {
 
         searchElement(window)
 
-        // Find the active chat header - it's usually a heading or button with just a name
-        // that appears BEFORE the messages in the tree traversal
-        // Look for AXHeading or AXStaticText that's a short name (not a message)
-        for (text, role, _) in allTexts {
-            // Skip sidebar items which have "Message from" prefix
-            if text.hasPrefix("Message from ") { continue }
-            // Skip messages
-            if text.hasPrefix("message, ") || text.hasPrefix("Your message") { continue }
-            // Skip UI elements
-            if text.contains("WhatsApp") || text == "Chats" { continue }
-            if text.hasPrefix("Ask Meta") { continue }
-            if ["All", "Unread", "Favorites", "Groups"].contains(text) { continue }
-            if text.contains(" of ") { continue } // "1 of 4" etc
+        // Look for messages with "Received from <Name>" pattern (active chat messages)
+        // Format: "message, <content>, <time>, Received from <Name>"
+        var contactName: String?
+        var lastIncomingMessage: String?
 
-            // Look for heading role which is typically the chat header
-            if role == "AXHeading" && text.count > 1 && text.count < 50 {
-                contactName = text
+        for (text, _) in allTexts.reversed() {
+            // Skip if not a received message
+            guard text.hasPrefix("message, ") && text.contains("Received from ") else { continue }
+
+            // Extract contact name from end: "Received from <Name>"
+            if let receivedRange = text.range(of: "Received from ") {
+                let nameStart = receivedRange.upperBound
+                let name = String(text[nameStart...]).trimmingCharacters(in: .whitespaces)
+                if !name.isEmpty && name.count < 50 {
+                    contactName = name
+                }
+            }
+
+            // Extract message content: between "message, " and the timestamp
+            // Format: "message, <content>, HH:MM, Received from..."
+            let afterPrefix = String(text.dropFirst(9)) // Remove "message, "
+
+            // Find the timestamp pattern (like "20:37," or "13October2024")
+            // The content is everything before the timestamp
+            if let timeRange = afterPrefix.range(of: #", \d{1,2}:\d{2},"#, options: .regularExpression) {
+                let content = String(afterPrefix[..<timeRange.lowerBound])
+                if !content.isEmpty {
+                    lastIncomingMessage = content
+                }
+            } else if let timeRange = afterPrefix.range(of: #", \d{1,2}\D+\d{4}"#, options: .regularExpression) {
+                // Alternative date format like "13October2024"
+                let content = String(afterPrefix[..<timeRange.lowerBound])
+                if !content.isEmpty {
+                    lastIncomingMessage = content
+                }
+            } else {
+                // Fallback: take content before first comma-space-digit pattern
+                let parts = afterPrefix.components(separatedBy: ", ")
+                if parts.count > 1 {
+                    lastIncomingMessage = parts[0]
+                }
+            }
+
+            // Found what we need
+            if contactName != nil && lastIncomingMessage != nil {
                 break
             }
         }
 
-        // If no heading found, try to find from "Message from" but get the FIRST one
-        // (which is likely the selected/active chat)
-        if contactName == nil {
-            for (text, _, _) in allTexts {
-                if text.hasPrefix("Message from ") {
-                    let nameStart = text.index(text.startIndex, offsetBy: 13)
-                    let rest = String(text[nameStart...])
-                    if let commaIndex = rest.firstIndex(of: ",") {
-                        contactName = String(rest[..<commaIndex])
-                        break
-                    }
-                }
-            }
-        }
-
-        // Find the LAST incoming message (most recent)
-        for (text, _, _) in allTexts.reversed() {
-            if text.hasPrefix("message, ") && !text.contains("Your message") {
-                let msgStart = text.index(text.startIndex, offsetBy: 9)
-                let content = String(text[msgStart...])
-                if content.count > 1 {
-                    lastIncomingMessage = content
-                    break
-                }
-            }
-        }
-
-        // Debug: print what we found
+        // Debug output
         if contactName == nil || lastIncomingMessage == nil {
-            let sample = allTexts.prefix(15).map { "[\($0.role)] \($0.text.prefix(25))" }.joined(separator: ", ")
-            debugLog("Tree sample: \(sample)")
+            let sample = allTexts.prefix(10).map { "[\($0.role)] \($0.text.prefix(40))" }.joined(separator: "\n")
+            debugLog("No active chat found. Sample:\n\(sample)")
         } else {
-            debugLog("Found: '\(contactName!)' -> '\(lastIncomingMessage!.prefix(50))...'")
+            debugLog("Active chat: '\(contactName!)' msg: '\(lastIncomingMessage!.prefix(40))...'")
         }
 
         if let name = contactName, let message = lastIncomingMessage {
