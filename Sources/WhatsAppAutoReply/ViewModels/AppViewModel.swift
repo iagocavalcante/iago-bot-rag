@@ -74,8 +74,14 @@ class AppViewModel: ObservableObject {
     func loadContacts() {
         do {
             contacts = try dbManager.getAllContacts()
+            let enabled = contacts.filter { $0.autoReplyEnabled }.map { $0.name }
+            if !enabled.isEmpty {
+                log("Loaded \(contacts.count) contacts. Auto-reply ON for: \(enabled.joined(separator: ", "))")
+            } else {
+                log("Loaded \(contacts.count) contacts. No auto-reply enabled.")
+            }
         } catch {
-            print("Failed to load contacts: \(error)")
+            log("Failed to load contacts: \(error)", isError: true)
         }
     }
 
@@ -120,6 +126,7 @@ class AppViewModel: ObservableObject {
         do {
             let newState = !contact.autoReplyEnabled
             try dbManager.updateContactAutoReply(id: contact.id, enabled: newState)
+            log("Auto-reply for '\(contact.name)' set to \(newState ? "ON" : "OFF")")
 
             // Update local state
             if let index = contacts.firstIndex(where: { $0.id == contact.id }) {
@@ -129,7 +136,7 @@ class AppViewModel: ObservableObject {
             // Start/stop monitoring based on any active contacts
             updateMonitoringState()
         } catch {
-            print("Failed to toggle auto-reply: \(error)")
+            log("Failed to toggle auto-reply: \(error)", isError: true)
         }
     }
 
