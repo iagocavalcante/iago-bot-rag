@@ -1,0 +1,131 @@
+import Foundation
+
+struct ParsedMessage {
+    let timestamp: Date
+    let sender: String
+    let content: String
+}
+
+class ChatParser {
+    private let userName: String
+    private let dateFormatter: DateFormatter
+
+    init(userName: String = "Iago Cavalcante") {
+        self.userName = userName
+        self.dateFormatter = DateFormatter()
+        self.dateFormatter.dateFormat = "dd/MM/yyyy, HH:mm:ss"
+        self.dateFormatter.locale = Locale(identifier: "pt_BR")
+    }
+
+    func parseZipFile(at url: URL) throws -> (contactName: String, messages: [ParsedMessage]) {
+        // Extract contact name from zip filename
+        let filename = url.deletingPathExtension().lastPathComponent
+        let contactName = filename.replacingOccurrences(of: "WhatsApp Chat - ", with: "")
+
+        // Unzip and read _chat.txt
+        let chatContent = try extractChatFromZip(url)
+        let messages = parseChat(chatContent)
+
+        return (contactName, messages)
+    }
+
+    private func extractChatFromZip(_ zipUrl: URL) throws -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+        process.arguments = ["-p", zipUrl.path, "_chat.txt"]
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+
+        try process.run()
+        process.waitUntilExit()
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        guard let content = String(data: data, encoding: .utf8) else {
+            throw ParserError.invalidEncoding
+        }
+        return content
+    }
+
+    func parseChat(_ content: String) -> [ParsedMessage] {
+        var messages: [ParsedMessage] = []
+        let lines = content.components(separatedBy: .newlines)
+
+        // Pattern: [DD/MM/YYYY, HH:MM:SS] Sender: Message
+        let pattern = #"^\[(\d{2}/\d{2}/\d{4}, \d{2}:\d{2}:\d{2})\] ([^:]+): (.+)$"#
+        let regex = try? NSRegularExpression(pattern: pattern, options: [])
+
+        var currentMessage: (date: String, sender: String, content: String)?
+
+        for line in lines {
+            let range = NSRange(line.startIndex..., in: line)
+
+            if let match = regex?.firstMatch(in: line, options: [], range: range) {
+                // Save previous message if exists
+                if let current = currentMessage {
+                    if let date = dateFormatter.date(from: current.date) {
+                        messages.append(ParsedMessage(
+                            timestamp: date,
+                            sender: current.sender,
+                            content: current.content
+                        ))
+                    }
+                }
+
+                // Parse new message
+                let dateRange = Range(match.range(at: 1), in: line)!
+                let senderRange = Range(match.range(at: 2), in: line)!
+                let contentRange = Range(match.range(at: 3), in: line)!
+
+                let dateStr = String(line[dateRange])
+                let sender = String(line[senderRange])
+                let content = String(line[contentRange])
+
+                // Skip system messages and media
+                if sender.contains("Messages and calls are end-to-end encrypted") ||
+                   sender.contains("As mensagens e ligações são protegidas") ||
+                   content.contains("<anexado:") ||
+                   content.contains("<attached:") ||
+                   content.contains("imagem ocultada") ||
+                   content.contains("image omitted") {
+                    currentMessage = nil
+                    continue
+                }
+
+                currentMessage = (dateStr, sender, content)
+            } else if currentMessage != nil {
+                // Continuation of previous message (multiline)
+                currentMessage?.content += "\n" + line
+            }
+        }
+
+        // Don't forget last message
+        if let current = currentMessage, let date = dateFormatter.date(from: current.date) {
+            messages.append(ParsedMessage(
+                timestamp: date,
+                sender: current.sender,
+                content: current.content
+            ))
+        }
+
+        return messages
+    }
+
+    func convertToMessages(parsed: [ParsedMessage], contactId: Int64, contactName: String) -> [Message] {
+        return parsed.map { pm in
+            let sender: Message.Sender = pm.sender == userName ? .user : .contact
+            return Message(
+                contactId: contactId,
+                sender: sender,
+                content: pm.content,
+                timestamp: pm.timestamp
+            )
+        }
+    }
+
+    enum ParserError: Error {
+        case invalidEncoding
+        case fileNotFound
+    }
+}
