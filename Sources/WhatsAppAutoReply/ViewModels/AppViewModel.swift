@@ -167,46 +167,48 @@ class AppViewModel: ObservableObject {
         let parser = ChatParser()
         let dbManager = self.dbManager
 
-        Task.detached { [weak self] in
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+
             do {
-                let (contactName, parsed) = try parser.parseZipFile(at: url)
+                let (contactName, parsed) = try await Task.detached {
+                    try parser.parseZipFile(at: url)
+                }.value
 
-                await MainActor.run {
-                    self?.importProgress = ImportProgress(contactName: contactName, current: 0, total: parsed.count)
-                }
+                self.importProgress = ImportProgress(contactName: contactName, current: 0, total: parsed.count)
 
-                // Create or get contact
-                var contact: Contact
-                if let existing = try dbManager.getContactByName(contactName) {
-                    contact = existing
-                } else {
-                    let id = try dbManager.insertContact(Contact(name: contactName))
-                    contact = Contact(id: id, name: contactName)
-                }
+                // Create or get contact on background
+                let contact: Contact = try await Task.detached {
+                    if let existing = try dbManager.getContactByName(contactName) {
+                        return existing
+                    } else {
+                        let id = try dbManager.insertContact(Contact(name: contactName))
+                        return Contact(id: id, name: contactName)
+                    }
+                }.value
 
-                // Convert and insert messages
+                // Convert messages
                 let messages = parser.convertToMessages(
                     parsed: parsed,
                     contactId: contact.id,
                     contactName: contactName
                 )
 
-                try dbManager.insertMessages(messages) { current, total in
-                    Task { @MainActor in
-                        self?.importProgress = ImportProgress(contactName: contactName, current: current, total: total)
+                // Insert on background with progress callback
+                try await Task.detached {
+                    try dbManager.insertMessages(messages) { current, total in
+                        Task { @MainActor in
+                            self.importProgress = ImportProgress(contactName: contactName, current: current, total: total)
+                        }
                     }
-                }
+                }.value
 
-                await MainActor.run {
-                    self?.importProgress = nil
-                    self?.loadContacts()
-                    print("Imported \(messages.count) messages for \(contactName)")
-                }
+                self.importProgress = nil
+                self.loadContacts()
+                print("Imported \(messages.count) messages for \(contactName)")
             } catch {
-                await MainActor.run {
-                    self?.importProgress = nil
-                    print("Import failed: \(error)")
-                }
+                self.importProgress = nil
+                print("Import failed: \(error)")
             }
         }
     }
