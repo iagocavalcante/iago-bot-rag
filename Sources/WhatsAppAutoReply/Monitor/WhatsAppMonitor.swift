@@ -128,13 +128,14 @@ class WhatsAppMonitor: ObservableObject {
     }
 
     private func findLastMessage(in window: AXUIElement) -> (contactName: String, message: String)? {
-        // This navigates the WhatsApp accessibility tree
-        // The structure may vary with WhatsApp versions
+        // WhatsApp Desktop accessibility structure (2024+):
+        // - Contact name: AXButton with "Message from <Name>," or "<Name>,"
+        // - Incoming messages: AXButton/AXStaticText starting with "message, <content>"
+        // - User messages: AXButton/AXStaticText starting with "Your message, <content>"
 
-        // Try to find the chat header (contact name) and message list
         var contactName: String?
-        var lastMessage: String?
-        var allTexts: [(text: String, role: String, depth: Int)] = []
+        var lastIncomingMessage: String?
+        var allTexts: [(text: String, role: String)] = []
 
         func searchElement(_ element: AXUIElement, depth: Int = 0) {
             guard depth < 15 else { return }
@@ -143,29 +144,35 @@ class WhatsAppMonitor: ObservableObject {
             let value = AccessibilityHelper.getValue(element)
             let title = AccessibilityHelper.getTitle(element)
 
-            let text = value ?? title
-            if let t = text, !t.isEmpty {
-                allTexts.append((t, role, depth))
-            }
+            if let text = value ?? title, !text.isEmpty {
+                allTexts.append((text, role))
 
-            // Look for static text elements that contain messages
-            if role == "AXStaticText", let text = value ?? title {
-                // Skip system messages and timestamps
-                if !text.isEmpty &&
-                   !text.contains(":") && // timestamps
-                   text.count > 2 &&
-                   text.count < 500 {
-                    lastMessage = text
+                // Extract contact name from "Message from <Name>," pattern
+                if text.hasPrefix("Message from ") {
+                    let nameStart = text.index(text.startIndex, offsetBy: 13) // "Message from ".count
+                    let rest = String(text[nameStart...])
+                    if let commaIndex = rest.firstIndex(of: ",") {
+                        contactName = String(rest[..<commaIndex])
+                    }
                 }
-            }
 
-            // Look for the contact/chat name in header area
-            if role == "AXStaticText" || role == "AXButton",
-               let text = value ?? title,
-               text.count > 1 && text.count < 50 && contactName == nil {
-                // Heuristic: contact name is usually in the header
-                if !text.contains("WhatsApp") && !text.hasPrefix("[") {
-                    contactName = text
+                // Extract incoming message (not "Your message")
+                // Format: "message, <actual message content>"
+                if text.hasPrefix("message, ") && !text.hasPrefix("Your message") {
+                    let msgStart = text.index(text.startIndex, offsetBy: 9) // "message, ".count
+                    let content = String(text[msgStart...])
+                    if content.count > 1 {
+                        lastIncomingMessage = content
+                    }
+                }
+
+                // Also check for standalone "message," format (AXStaticText)
+                if role == "AXStaticText" && text.hasPrefix("message, ") {
+                    let msgStart = text.index(text.startIndex, offsetBy: 9)
+                    let content = String(text[msgStart...])
+                    if content.count > 1 {
+                        lastIncomingMessage = content
+                    }
                 }
             }
 
@@ -177,12 +184,12 @@ class WhatsAppMonitor: ObservableObject {
         searchElement(window)
 
         // Debug: print what we found
-        if contactName == nil || lastMessage == nil {
+        if contactName == nil || lastIncomingMessage == nil {
             let sample = allTexts.prefix(10).map { "[\($0.role)] \($0.text.prefix(30))" }.joined(separator: ", ")
             debugLog("Tree sample: \(sample)")
         }
 
-        if let name = contactName, let message = lastMessage {
+        if let name = contactName, let message = lastIncomingMessage {
             return (name, message)
         }
         return nil
