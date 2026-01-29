@@ -8,6 +8,17 @@ class AppViewModel: ObservableObject {
     @Published var isOllamaRunning = false
     @Published var pendingResponse: PendingResponse?
     @Published var responseLog: [ResponseLogEntry] = []
+    @Published var importProgress: ImportProgress?
+
+    struct ImportProgress {
+        let contactName: String
+        let current: Int
+        let total: Int
+
+        var percent: Double {
+            total > 0 ? Double(current) / Double(total) : 0
+        }
+    }
 
     private let dbManager = DatabaseManager.shared
     private let monitor = WhatsAppMonitor()
@@ -154,33 +165,49 @@ class AppViewModel: ObservableObject {
 
     func importChatExport(url: URL) {
         let parser = ChatParser()
+        let dbManager = self.dbManager
 
-        do {
-            let (contactName, parsed) = try parser.parseZipFile(at: url)
+        Task.detached { [weak self] in
+            do {
+                let (contactName, parsed) = try parser.parseZipFile(at: url)
 
-            // Create or get contact
-            var contact: Contact
-            if let existing = try dbManager.getContactByName(contactName) {
-                contact = existing
-            } else {
-                let id = try dbManager.insertContact(Contact(name: contactName))
-                contact = Contact(id: id, name: contactName)
+                await MainActor.run {
+                    self?.importProgress = ImportProgress(contactName: contactName, current: 0, total: parsed.count)
+                }
+
+                // Create or get contact
+                var contact: Contact
+                if let existing = try dbManager.getContactByName(contactName) {
+                    contact = existing
+                } else {
+                    let id = try dbManager.insertContact(Contact(name: contactName))
+                    contact = Contact(id: id, name: contactName)
+                }
+
+                // Convert and insert messages
+                let messages = parser.convertToMessages(
+                    parsed: parsed,
+                    contactId: contact.id,
+                    contactName: contactName
+                )
+
+                try dbManager.insertMessages(messages) { current, total in
+                    Task { @MainActor in
+                        self?.importProgress = ImportProgress(contactName: contactName, current: current, total: total)
+                    }
+                }
+
+                await MainActor.run {
+                    self?.importProgress = nil
+                    self?.loadContacts()
+                    print("Imported \(messages.count) messages for \(contactName)")
+                }
+            } catch {
+                await MainActor.run {
+                    self?.importProgress = nil
+                    print("Import failed: \(error)")
+                }
             }
-
-            // Convert and insert messages
-            let messages = parser.convertToMessages(
-                parsed: parsed,
-                contactId: contact.id,
-                contactName: contactName
-            )
-            try dbManager.insertMessages(messages)
-
-            // Refresh contacts list
-            loadContacts()
-
-            print("Imported \(messages.count) messages for \(contactName)")
-        } catch {
-            print("Import failed: \(error)")
         }
     }
 

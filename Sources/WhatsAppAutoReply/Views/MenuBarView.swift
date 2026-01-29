@@ -79,10 +79,30 @@ struct MenuBarView: View {
 
             Divider()
 
+            // Import progress
+            if let progress = viewModel.importProgress {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Importing \(progress.contactName)...")
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                    ProgressView(value: progress.percent)
+                        .progressViewStyle(.linear)
+                    Text("\(progress.current) / \(progress.total) messages")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                .padding(8)
+                .background(Color.blue.opacity(0.1))
+                .cornerRadius(8)
+
+                Divider()
+            }
+
             // Actions
             Button("Import Chat Export...") {
                 showingImporter = true
             }
+            .disabled(viewModel.importProgress != nil)
 
             Button("View Response Log (\(viewModel.responseLog.count))") {
                 showingLog = true

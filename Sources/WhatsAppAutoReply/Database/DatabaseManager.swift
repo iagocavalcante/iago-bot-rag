@@ -123,20 +123,40 @@ class DatabaseManager {
         return try db.run(insert)
     }
 
-    func insertMessages(_ messageList: [Message]) throws {
+    func insertMessages(_ messageList: [Message], batchSize: Int = 500, progress: ((Int, Int) -> Void)? = nil) throws {
         guard let db = db else { throw DatabaseError.connectionFailed }
 
-        try db.transaction {
-            for message in messageList {
-                let insert = messages.insert(
-                    messageContactId <- message.contactId,
-                    messageSender <- message.sender.rawValue,
-                    messageContent <- message.content,
-                    messageTimestamp <- message.timestamp
-                )
-                _ = try db.run(insert)
+        // Optimize for bulk inserts
+        try db.execute("PRAGMA synchronous = OFF")
+        try db.execute("PRAGMA journal_mode = MEMORY")
+
+        let total = messageList.count
+        var inserted = 0
+
+        // Insert in batches
+        for batch in stride(from: 0, to: messageList.count, by: batchSize) {
+            let end = min(batch + batchSize, messageList.count)
+            let chunk = Array(messageList[batch..<end])
+
+            try db.transaction {
+                for message in chunk {
+                    let insert = messages.insert(
+                        messageContactId <- message.contactId,
+                        messageSender <- message.sender.rawValue,
+                        messageContent <- message.content,
+                        messageTimestamp <- message.timestamp
+                    )
+                    _ = try db.run(insert)
+                }
             }
+
+            inserted = end
+            progress?(inserted, total)
         }
+
+        // Restore safe settings
+        try db.execute("PRAGMA synchronous = NORMAL")
+        try db.execute("PRAGMA journal_mode = WAL")
     }
 
     func getMessagesForContact(contactId: Int64, limit: Int = 100) throws -> [Message] {
