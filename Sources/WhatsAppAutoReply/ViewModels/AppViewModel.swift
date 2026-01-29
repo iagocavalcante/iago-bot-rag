@@ -144,16 +144,27 @@ class AppViewModel: ObservableObject {
     }
 
     private func handleNewMessage(_ detected: DetectedMessage) async {
+        log("Processing message from '\(detected.contactName)'")
+
         // Check if this contact has auto-reply enabled
-        guard contacts.first(where: { $0.name == detected.contactName && $0.autoReplyEnabled }) != nil else {
+        let matchingContact = contacts.first(where: { $0.name == detected.contactName })
+        if matchingContact == nil {
+            log("No contact found matching '\(detected.contactName)'. Available: \(contacts.map { $0.name }.joined(separator: ", "))", isError: true)
             return
         }
+        guard matchingContact!.autoReplyEnabled else {
+            log("Auto-reply disabled for '\(detected.contactName)'")
+            return
+        }
+
+        log("Generating response for '\(detected.contactName)'...")
 
         do {
             if let response = try await responseGenerator.generateResponse(
                 for: detected.contactName,
                 message: detected.content
             ) {
+                log("Generated response: \(response.prefix(50))...")
                 // Set pending response (user has 5 seconds to cancel)
                 pendingResponse = PendingResponse(
                     contactName: detected.contactName,
@@ -168,9 +179,11 @@ class AppViewModel: ObservableObject {
                 if pendingResponse != nil {
                     sendPendingResponse()
                 }
+            } else {
+                log("No response generated (check message history)", isError: true)
             }
         } catch {
-            print("Failed to generate response: \(error)")
+            log("Failed to generate response: \(error)", isError: true)
         }
     }
 
