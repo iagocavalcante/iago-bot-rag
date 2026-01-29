@@ -22,7 +22,8 @@ struct MenuBarView: View {
             StatusRow(
                 label: "Accessibility",
                 isOK: viewModel.hasAccessibilityPermission,
-                action: viewModel.hasAccessibilityPermission ? nil : { viewModel.requestAccessibilityPermission() }
+                action: viewModel.hasAccessibilityPermission ? nil : { viewModel.requestAccessibilityPermission() },
+                helpText: "System Settings → Privacy & Security → Accessibility → Enable WhatsAppAutoReply"
             )
 
             StatusRow(
@@ -148,22 +149,32 @@ struct StatusRow: View {
     let label: String
     let isOK: Bool
     var action: (() -> Void)?
+    var helpText: String?
 
     var body: some View {
-        HStack {
-            Circle()
-                .fill(isOK ? Color.green : Color.red)
-                .frame(width: 8, height: 8)
-            Text(label)
-                .font(.caption)
-            Spacer()
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Circle()
+                    .fill(isOK ? Color.green : Color.red)
+                    .frame(width: 8, height: 8)
+                Text(label)
+                    .font(.caption)
+                Spacer()
 
-            if !isOK, let action = action {
-                Button("Enable") {
-                    action()
+                if !isOK, let action = action {
+                    Button("Enable") {
+                        action()
+                    }
+                    .buttonStyle(.link)
+                    .font(.caption)
                 }
-                .buttonStyle(.link)
-                .font(.caption)
+            }
+
+            if !isOK, let help = helpText {
+                Text(help)
+                    .font(.system(size: 9))
+                    .foregroundColor(.secondary)
+                    .padding(.leading, 16)
             }
         }
     }
