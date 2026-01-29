@@ -8,13 +8,23 @@ struct ParsedMessage {
 
 class ChatParser {
     private let userName: String
-    private let dateFormatter: DateFormatter
+    private let dateFormatter4: DateFormatter  // 4-digit year
+    private let dateFormatter2: DateFormatter  // 2-digit year
 
     init(userName: String = "Iago Cavalcante") {
         self.userName = userName
-        self.dateFormatter = DateFormatter()
-        self.dateFormatter.dateFormat = "dd/MM/yyyy, HH:mm:ss"
-        self.dateFormatter.locale = Locale(identifier: "pt_BR")
+
+        self.dateFormatter4 = DateFormatter()
+        self.dateFormatter4.dateFormat = "dd/MM/yyyy, HH:mm:ss"
+        self.dateFormatter4.locale = Locale(identifier: "pt_BR")
+
+        self.dateFormatter2 = DateFormatter()
+        self.dateFormatter2.dateFormat = "dd/MM/yy, HH:mm:ss"
+        self.dateFormatter2.locale = Locale(identifier: "pt_BR")
+    }
+
+    private func parseDate(_ dateStr: String) -> Date? {
+        dateFormatter4.date(from: dateStr) ?? dateFormatter2.date(from: dateStr)
     }
 
     func parseZipFile(at url: URL) throws -> (contactName: String, messages: [ParsedMessage]) {
@@ -76,8 +86,8 @@ class ChatParser {
         var messages: [ParsedMessage] = []
         let lines = content.components(separatedBy: .newlines)
 
-        // Pattern: [DD/MM/YYYY, HH:MM:SS] Sender: Message
-        let pattern = #"^\[(\d{2}/\d{2}/\d{4}, \d{2}:\d{2}:\d{2})\] ([^:]+): (.+)$"#
+        // Pattern: [DD/MM/YY or YYYY, HH:MM:SS] Sender: Message
+        let pattern = #"^\[(\d{2}/\d{2}/\d{2,4}, \d{2}:\d{2}:\d{2})\] ([^:]+): (.+)$"#
         let regex = try? NSRegularExpression(pattern: pattern, options: [])
 
         var currentMessage: (date: String, sender: String, content: String)?
@@ -88,7 +98,7 @@ class ChatParser {
             if let match = regex?.firstMatch(in: line, options: [], range: range) {
                 // Save previous message if exists
                 if let current = currentMessage {
-                    if let date = dateFormatter.date(from: current.date) {
+                    if let date = parseDate(current.date) {
                         messages.append(ParsedMessage(
                             timestamp: date,
                             sender: current.sender,
@@ -125,7 +135,7 @@ class ChatParser {
         }
 
         // Don't forget last message
-        if let current = currentMessage, let date = dateFormatter.date(from: current.date) {
+        if let current = currentMessage, let date = parseDate(current.date) {
             messages.append(ParsedMessage(
                 timestamp: date,
                 sender: current.sender,
