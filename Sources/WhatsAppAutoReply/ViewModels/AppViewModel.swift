@@ -85,10 +85,25 @@ class AppViewModel: ObservableObject {
         }
     }
 
+    var monitorDebugInfo: String {
+        monitor.debugInfo
+    }
+
+    var isMonitoring: Bool {
+        monitor.isMonitoring
+    }
+
     func setupMonitor() {
         monitor.onNewMessage = { [weak self] detected in
             Task { @MainActor in
+                self?.log("Message detected from '\(detected.contactName)': \(detected.content.prefix(50))...")
                 await self?.handleNewMessage(detected)
+            }
+        }
+
+        monitor.onDebugLog = { [weak self] msg in
+            Task { @MainActor in
+                self?.log("[Monitor] \(msg)")
             }
         }
 

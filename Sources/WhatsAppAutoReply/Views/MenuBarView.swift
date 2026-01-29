@@ -35,6 +35,11 @@ struct MenuBarView: View {
                 isOK: viewModel.isOllamaRunning
             )
 
+            StatusRow(
+                label: "Monitoring",
+                isOK: viewModel.isMonitoring
+            )
+
             Divider()
 
             // Pending response notification

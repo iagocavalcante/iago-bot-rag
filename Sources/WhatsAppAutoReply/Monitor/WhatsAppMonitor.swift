@@ -13,11 +13,19 @@ class WhatsAppMonitor: ObservableObject {
     @Published var lastDetectedMessage: DetectedMessage?
     @Published var whatsAppRunning = false
     @Published var hasAccessibilityPermission = false
+    @Published var debugInfo: String = ""
 
     private var timer: Timer?
     private var lastMessageHash: Int = 0
 
     var onNewMessage: ((DetectedMessage) -> Void)?
+    var onDebugLog: ((String) -> Void)?
+
+    private func debugLog(_ msg: String) {
+        debugInfo = msg
+        onDebugLog?(msg)
+        print("[Monitor] \(msg)")
+    }
 
     init() {
         checkPermissions()
@@ -30,10 +38,11 @@ class WhatsAppMonitor: ObservableObject {
 
     func startMonitoring() {
         guard hasAccessibilityPermission else {
-            print("No accessibility permission")
+            debugLog("Cannot start - no accessibility permission")
             return
         }
 
+        debugLog("Starting monitoring...")
         isMonitoring = true
         timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             self?.checkForNewMessages()
@@ -48,6 +57,9 @@ class WhatsAppMonitor: ObservableObject {
 
     private func checkForNewMessages() {
         guard let window = AccessibilityHelper.findWhatsAppWindow() else {
+            if whatsAppRunning {
+                debugLog("WhatsApp window not found")
+            }
             whatsAppRunning = false
             return
         }
@@ -55,10 +67,12 @@ class WhatsAppMonitor: ObservableObject {
 
         // Find the active chat name and last message
         if let (contactName, lastMessage) = findLastMessage(in: window) {
+            debugLog("Found: '\(contactName)' -> '\(lastMessage.prefix(50))...'")
             let messageHash = "\(contactName):\(lastMessage)".hashValue
 
             if messageHash != lastMessageHash {
                 lastMessageHash = messageHash
+                debugLog("NEW message detected from '\(contactName)'")
 
                 let detected = DetectedMessage(
                     contactName: contactName,
@@ -69,6 +83,8 @@ class WhatsAppMonitor: ObservableObject {
                 lastDetectedMessage = detected
                 onNewMessage?(detected)
             }
+        } else {
+            debugLog("Could not parse contact/message from WhatsApp window")
         }
     }
 
