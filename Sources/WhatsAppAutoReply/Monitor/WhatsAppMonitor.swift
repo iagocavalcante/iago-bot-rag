@@ -88,6 +88,45 @@ class WhatsAppMonitor: ObservableObject {
         }
     }
 
+    /// Dump accessibility tree for debugging
+    func dumpAccessibilityTree() -> String {
+        guard let window = AccessibilityHelper.findWhatsAppWindow() else {
+            return "WhatsApp window not found"
+        }
+
+        var output = "WhatsApp Accessibility Tree:\n"
+        var allTexts: [(role: String, text: String, depth: Int)] = []
+
+        func dumpElement(_ element: AXUIElement, depth: Int = 0) {
+            guard depth < 10 else { return }
+
+            let role = AccessibilityHelper.getRole(element) ?? "?"
+            let value = AccessibilityHelper.getValue(element)
+            let title = AccessibilityHelper.getTitle(element)
+            let desc = AccessibilityHelper.getDescription(element)
+
+            let text = value ?? title ?? desc
+            if let t = text, !t.isEmpty {
+                allTexts.append((role, t, depth))
+            }
+
+            for child in AccessibilityHelper.getChildren(element) {
+                dumpElement(child, depth: depth + 1)
+            }
+        }
+
+        dumpElement(window)
+
+        // Show unique text elements found
+        for (role, text, depth) in allTexts.prefix(50) {
+            let indent = String(repeating: "  ", count: depth)
+            let preview = String(text.prefix(60)).replacingOccurrences(of: "\n", with: "\\n")
+            output += "\(indent)[\(role)] \(preview)\n"
+        }
+
+        return output
+    }
+
     private func findLastMessage(in window: AXUIElement) -> (contactName: String, message: String)? {
         // This navigates the WhatsApp accessibility tree
         // The structure may vary with WhatsApp versions
@@ -95,13 +134,19 @@ class WhatsAppMonitor: ObservableObject {
         // Try to find the chat header (contact name) and message list
         var contactName: String?
         var lastMessage: String?
+        var allTexts: [(text: String, role: String, depth: Int)] = []
 
         func searchElement(_ element: AXUIElement, depth: Int = 0) {
             guard depth < 15 else { return }
 
-            let role = AccessibilityHelper.getRole(element)
+            let role = AccessibilityHelper.getRole(element) ?? ""
             let value = AccessibilityHelper.getValue(element)
             let title = AccessibilityHelper.getTitle(element)
+
+            let text = value ?? title
+            if let t = text, !t.isEmpty {
+                allTexts.append((t, role, depth))
+            }
 
             // Look for static text elements that contain messages
             if role == "AXStaticText", let text = value ?? title {
@@ -130,6 +175,12 @@ class WhatsAppMonitor: ObservableObject {
         }
 
         searchElement(window)
+
+        // Debug: print what we found
+        if contactName == nil || lastMessage == nil {
+            let sample = allTexts.prefix(10).map { "[\($0.role)] \($0.text.prefix(30))" }.joined(separator: ", ")
+            debugLog("Tree sample: \(sample)")
+        }
 
         if let name = contactName, let message = lastMessage {
             return (name, message)

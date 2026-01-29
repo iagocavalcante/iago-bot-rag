@@ -301,4 +301,12 @@ class AppViewModel: ObservableObject {
     func requestAccessibilityPermission() {
         _ = AccessibilityHelper.checkAccessibilityPermission()
     }
+
+    func dumpWhatsAppTree() {
+        let tree = monitor.dumpAccessibilityTree()
+        log("=== WhatsApp Tree Dump ===")
+        for line in tree.components(separatedBy: "\n").prefix(30) {
+            log(line)
+        }
+    }
 }

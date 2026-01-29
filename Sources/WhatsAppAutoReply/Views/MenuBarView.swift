@@ -119,6 +119,12 @@ struct MenuBarView: View {
                 showingDebugLog = true
             }
 
+            Button("Dump WhatsApp Tree") {
+                viewModel.dumpWhatsAppTree()
+                showingDebugLog = true
+            }
+            .disabled(!viewModel.isWhatsAppRunning)
+
             Divider()
 
             Button("Quit") {
