@@ -223,26 +223,45 @@ class WhatsAppMonitor: ObservableObject {
         var lastIncomingMessage: String?
         var isGroupMessage = false
 
-        // First pass: extract group name from ANY "Received in" message (including stickers)
-        for (text, _) in allTexts {
-            if text.contains("Received in ") {
-                if let receivedRange = text.range(of: "Received in ") {
-                    let groupStart = receivedRange.upperBound
-                    var group = String(text[groupStart...]).trimmingCharacters(in: .whitespaces)
+        // First: check if chat header looks like a group name (use it as primary source)
+        // The header is more reliable than "Received in" which might be from a different chat
+        if let header = chatHeaderName {
+            // If header has group indicators or doesn't look like a person name, it's likely a group
+            // Group names often have: brackets [], emojis, multiple words with special chars
+            let groupIndicators = header.contains("[") || header.contains("]") ||
+                                  header.contains("👥") || header.contains("🦹") ||
+                                  header.count > 25
+            if groupIndicators {
+                groupName = header
+                isGroupMessage = true
+                debugLog("Using chat header as group name: '\(header)'")
+            }
+        }
 
-                    // Remove WhatsApp status suffixes
-                    let suffixes = [", Pinned", ", Muted", ", Archived", ", Starred"]
-                    for suffix in suffixes {
-                        if group.hasSuffix(suffix) {
-                            group = String(group.dropLast(suffix.count))
+        // Fallback: extract group name from "Received in" messages (only if no header group found)
+        if groupName == nil {
+            for (text, _) in allTexts {
+                if text.contains("Received in ") {
+                    if let receivedRange = text.range(of: "Received in ") {
+                        let groupStart = receivedRange.upperBound
+                        var group = String(text[groupStart...]).trimmingCharacters(in: .whitespacesAndNewlines)
+
+                        // Remove WhatsApp status suffixes (check multiple times for multiple suffixes)
+                        let suffixes = [", Pinned", ", Muted", ", Archived", ", Starred", ",Pinned", ",Muted"]
+                        for _ in 0..<2 {
+                            for suffix in suffixes {
+                                if group.hasSuffix(suffix) {
+                                    group = String(group.dropLast(suffix.count)).trimmingCharacters(in: .whitespaces)
+                                }
+                            }
                         }
-                    }
 
-                    if !group.isEmpty && group.count < 50 {
-                        groupName = group
-                        isGroupMessage = true
-                        debugLog("Found group name from any 'Received in': '\(group)'")
-                        break
+                        if !group.isEmpty && group.count < 50 {
+                            groupName = group
+                            isGroupMessage = true
+                            debugLog("Found group name from 'Received in': '\(group)'")
+                            break
+                        }
                     }
                 }
             }
