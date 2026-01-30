@@ -294,6 +294,7 @@ class WhatsAppMonitor: ObservableObject {
     }
 
     /// Parse Sidebar format: "Message from <Name>, <content>"
+    /// For groups: "Message from <Sender>, <content>, Received in <Group>"
     private func parseSidebarMessage(_ text: String) -> (String, String)? {
         guard text.hasPrefix("Message from ") else {
             return nil
@@ -301,6 +302,34 @@ class WhatsAppMonitor: ObservableObject {
 
         let afterPrefix = String(text.dropFirst(13)) // Remove "Message from "
 
+        // Check if this is a group message (contains "Received in ")
+        if afterPrefix.contains("Received in ") {
+            // Extract group name from "Received in <Group>"
+            guard let receivedRange = afterPrefix.range(of: "Received in ") else { return nil }
+            var groupName = String(afterPrefix[receivedRange.upperBound...])
+            groupName = cleanStatusSuffix(groupName)
+
+            guard !groupName.isEmpty else { return nil }
+
+            // Extract content between sender and timestamp
+            guard let commaIndex = afterPrefix.firstIndex(of: ",") else { return nil }
+            var content = String(afterPrefix[afterPrefix.index(after: commaIndex)...])
+                .trimmingCharacters(in: .whitespaces)
+
+            // Remove the "Received in <Group>" suffix from content
+            if let receivedInContent = content.range(of: ", Received in ") {
+                content = String(content[..<receivedInContent.lowerBound])
+            }
+
+            // Also try to clean timestamp from content
+            if let timestampRange = content.range(of: #", \d{1,2}:\d{2},"#, options: .regularExpression) {
+                content = String(content[..<timestampRange.lowerBound])
+            }
+
+            return (groupName, content)
+        }
+
+        // Regular DM sidebar message
         // Find first comma to split name and content
         guard let commaIndex = afterPrefix.firstIndex(of: ",") else { return nil }
 
