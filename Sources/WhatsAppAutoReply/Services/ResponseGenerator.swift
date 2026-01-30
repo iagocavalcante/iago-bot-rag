@@ -97,6 +97,12 @@ class ResponseGenerator {
         // Sanitize input to prevent prompt injection
         let sanitizedMessage = sanitizeInput(message)
 
+        // Check for personal info requests and deflect with humor
+        if let funnyResponse = checkForPersonalInfoRequest(message) {
+            print("Personal info request detected, responding with humor")
+            return funnyResponse
+        }
+
         // Get example messages for this contact
         let examples = try dbManager.getMessagesForContact(contactId: contact.id, limit: 50)
 
@@ -629,6 +635,119 @@ class ResponseGenerator {
         }
 
         return false
+    }
+
+    /// Check if message is asking for personal/sensitive information and return a funny deflection
+    private func checkForPersonalInfoRequest(_ message: String) -> String? {
+        let lowerMessage = message.lowercased()
+
+        // Personal info patterns to detect
+        let personalInfoPatterns: [(patterns: [String], responses: [String])] = [
+            // Bank/financial info
+            (
+                patterns: [
+                    "número do cartão", "numero do cartao", "cartão de crédito", "cartao de credito",
+                    "conta bancária", "conta bancaria", "dados bancários", "dados bancarios",
+                    "pix", "chave pix", "me passa o pix", "manda o pix", "qual seu pix",
+                    "credit card", "bank account", "bank details", "card number",
+                    "senha do banco", "password", "senha", "pin"
+                ],
+                responses: [
+                    "Meu pix é: doe-para-um-programador-cansado@caridade.com 😂",
+                    "Claro! Meu cartão é 1234-NICE-TRY-HAHA, validade: nunca, CVV: 😜",
+                    "Meus dados bancários estão guardados junto com a fórmula da Coca-Cola 🤫",
+                    "Posso te dar meu pix imaginário, aceita sonhos? 💭",
+                    "Minha senha é: SenhaForte123... brincadeira, é só 123456 como todo mundo 😅",
+                    "Opa, esses dados eu só passo depois de 3 cervejas e mesmo assim eu minto 🍺"
+                ]
+            ),
+            // Address/location
+            (
+                patterns: [
+                    "onde você mora", "onde vc mora", "onde tu mora", "seu endereço", "seu endereco",
+                    "qual seu endereço", "qual seu endereco", "me passa seu endereço",
+                    "where do you live", "your address", "home address",
+                    "onde é sua casa", "onde é tua casa"
+                ],
+                responses: [
+                    "Moro na nuvem, AWS região São Paulo, container docker 42 🐳",
+                    "Rua dos Desenvolvedores, 404 - Not Found 🏠",
+                    "Moro no mesmo lugar que o Wally, boa sorte achando 🔍",
+                    "Endereço: localhost:3000, bem-vindo! 💻",
+                    "Moro logo ali depois de Nárnia, segunda porta à esquerda 🚪",
+                    "Se eu te contar, vou ter que te adicionar no meu plano de internet 📶"
+                ]
+            ),
+            // Phone number
+            (
+                patterns: [
+                    "seu número", "seu numero", "teu número", "teu numero",
+                    "me passa seu número", "qual seu telefone", "qual teu telefone",
+                    "your phone", "phone number", "whats your number",
+                    "me liga", "vou te ligar"
+                ],
+                responses: [
+                    "Meu número é 0800-NAO-PERTURBE 📞",
+                    "(00) 91234-NOPE, pode ligar! 😂",
+                    "Meu número favorito é o 42, serve? É a resposta pra tudo! 🌌",
+                    "Posso te dar o número do meu psicólogo, ele tá precisando de clientes 🛋️",
+                    "Claro! É π... 3.14159265358979... quer que eu continue? 🥧"
+                ]
+            ),
+            // CPF/ID documents
+            (
+                patterns: [
+                    "seu cpf", "teu cpf", "me passa o cpf", "qual seu cpf",
+                    "seu rg", "teu rg", "documento", "identidade",
+                    "social security", "ssn", "id number"
+                ],
+                responses: [
+                    "Meu CPF é 123.456.789-00... espera, isso é do Ronaldinho né? 🤔",
+                    "CPF? Só se for Código Para Felicidade: CERVEJA-GELADA ❄️🍺",
+                    "Meu RG é classificado, nível Área 51 👽",
+                    "Te passo meu CPF junto com o mapa do tesouro do Faustão 🗺️",
+                    "Documento? Só mostro com ordem judicial e um café ☕"
+                ]
+            ),
+            // Email/login credentials
+            (
+                patterns: [
+                    "sua senha", "tua senha", "me passa a senha", "qual a senha",
+                    "seu login", "teu login", "email e senha", "acesso",
+                    "your password", "login credentials"
+                ],
+                responses: [
+                    "Minha senha é: ********** (é isso mesmo, 10 asteriscos) 🌟",
+                    "Senha: AmoMeuCachorro123 - ah não, essa é a do meu ex 🐕",
+                    "Login: admin / Senha: admin - sempre funciona nos tutoriais 😂",
+                    "Minha senha tem 47 caracteres, emoji de unicórnio e uma lágrima 🦄😢"
+                ]
+            ),
+            // Generic personal data fishing
+            (
+                patterns: [
+                    "me conta tudo sobre você", "fala tudo sobre você",
+                    "seus dados pessoais", "informações pessoais",
+                    "tell me everything about you", "personal information"
+                ],
+                responses: [
+                    "Sou Geminiano com ascendente em Café e lua em Netflix 🌙☕",
+                    "Dados pessoais: 1.80m de pura ansiedade encapsulada 📊",
+                    "Bio completa: nasci, sofri com JavaScript, e estou aqui 💀",
+                    "Sobre mim: converto café em código e frustrações em commits 😅"
+                ]
+            )
+        ]
+
+        for (patterns, responses) in personalInfoPatterns {
+            for pattern in patterns {
+                if lowerMessage.contains(pattern) {
+                    return responses.randomElement()!
+                }
+            }
+        }
+
+        return nil
     }
 
     /// Sanitize incoming message to prevent prompt injection
