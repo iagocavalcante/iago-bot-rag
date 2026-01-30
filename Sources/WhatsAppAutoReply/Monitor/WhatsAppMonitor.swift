@@ -177,7 +177,8 @@ class WhatsAppMonitor: ObservableObject {
 
         collectTexts(window)
 
-        // Search for incoming messages (most recent first)
+        // First pass: Look for active chat messages (DM or Group patterns)
+        // These are more reliable than sidebar messages
         for text in allTexts.reversed() {
             // Skip media messages
             if isMediaMessage(text) {
@@ -185,7 +186,8 @@ class WhatsAppMonitor: ObservableObject {
             }
 
             // Skip sent messages
-            if text.hasPrefix("Your message") || text.contains("Sent to") || text.contains("Delivered") {
+            if text.hasPrefix("Your message") || text.hasPrefix("Your photo") ||
+               text.hasPrefix("Your sticker") || text.contains("Sent to") {
                 continue
             }
 
@@ -197,6 +199,18 @@ class WhatsAppMonitor: ObservableObject {
             // Pattern 2: Group - "message, <content> from <Sender>, <time>, Received in <Group>"
             if let result = parseGroupMessage(text) {
                 return result
+            }
+        }
+
+        // Second pass: Fallback to sidebar messages only if no active chat message found
+        for text in allTexts.reversed() {
+            if isMediaMessage(text) {
+                continue
+            }
+
+            if text.hasPrefix("Your message") || text.hasPrefix("Your photo") ||
+               text.hasPrefix("Your sticker") || text.contains("Sent to") {
+                continue
             }
 
             // Pattern 3: Sidebar - "Message from <Name>, <content>"
@@ -307,6 +321,11 @@ class WhatsAppMonitor: ObservableObject {
     private func extractContentBeforeTimestamp(_ text: String) -> String? {
         // Pattern: ", HH:MM," (e.g., ", 22:30,")
         if let range = text.range(of: #", \d{1,2}:\d{2},"#, options: .regularExpression) {
+            let content = String(text[..<range.lowerBound])
+            return content.isEmpty ? nil : content
+        }
+        // Pattern: ", DDMonthatHH:MM" (e.g., ", 29Januaryat22:55")
+        if let range = text.range(of: #", \d{1,2}[A-Za-z]+at\d{1,2}:\d{2}"#, options: .regularExpression) {
             let content = String(text[..<range.lowerBound])
             return content.isEmpty ? nil : content
         }
