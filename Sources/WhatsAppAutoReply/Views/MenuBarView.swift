@@ -3,9 +3,11 @@ import UniformTypeIdentifiers
 
 struct MenuBarView: View {
     @StateObject private var viewModel = AppViewModel()
+    @StateObject private var settings = SettingsManager.shared
     @State private var showingImporter = false
     @State private var showingLog = false
     @State private var showingDebugLog = false
+    @State private var showingSettings = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -31,10 +33,18 @@ struct MenuBarView: View {
                 isOK: viewModel.isWhatsAppRunning
             )
 
-            StatusRow(
-                label: "Ollama",
-                isOK: viewModel.isOllamaRunning
-            )
+            // Show active AI provider
+            if settings.useOpenAI && settings.isOpenAIConfigured {
+                StatusRow(
+                    label: "OpenAI (\(settings.openAIModel))",
+                    isOK: true
+                )
+            } else {
+                StatusRow(
+                    label: "Ollama",
+                    isOK: viewModel.isOllamaRunning
+                )
+            }
 
             StatusRow(
                 label: "Monitoring",
@@ -125,6 +135,10 @@ struct MenuBarView: View {
             }
             .disabled(!viewModel.isWhatsAppRunning)
 
+            Button("Settings...") {
+                showingSettings = true
+            }
+
             Divider()
 
             Button("Quit") {
@@ -148,6 +162,112 @@ struct MenuBarView: View {
         .sheet(isPresented: $showingDebugLog) {
             DebugLogView(entries: viewModel.debugLog)
         }
+        .sheet(isPresented: $showingSettings) {
+            SettingsView()
+        }
+    }
+}
+
+struct SettingsView: View {
+    @StateObject private var settings = SettingsManager.shared
+    @Environment(\.dismiss) var dismiss
+    @State private var showingAPIKey = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Settings")
+                    .font(.headline)
+                Spacer()
+                Button("Done") { dismiss() }
+            }
+
+            Divider()
+
+            // User name
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Your Name")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                TextField("Name", text: $settings.userName)
+                    .textFieldStyle(.roundedBorder)
+            }
+
+            Divider()
+
+            // AI Provider toggle
+            VStack(alignment: .leading, spacing: 8) {
+                Text("AI Provider")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Picker("Provider", selection: $settings.useOpenAI) {
+                    Text("Ollama (Local)").tag(false)
+                    Text("OpenAI (Cloud)").tag(true)
+                }
+                .pickerStyle(.segmented)
+            }
+
+            // OpenAI Settings
+            if settings.useOpenAI {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("OpenAI API Key")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    HStack {
+                        if showingAPIKey {
+                            TextField("sk-...", text: $settings.openAIKey)
+                                .textFieldStyle(.roundedBorder)
+                        } else {
+                            SecureField("sk-...", text: $settings.openAIKey)
+                                .textFieldStyle(.roundedBorder)
+                        }
+
+                        Button(showingAPIKey ? "Hide" : "Show") {
+                            showingAPIKey.toggle()
+                        }
+                        .buttonStyle(.link)
+                    }
+
+                    if !settings.isOpenAIConfigured {
+                        Text("Enter your API key from platform.openai.com")
+                            .font(.caption2)
+                            .foregroundColor(.orange)
+                    }
+
+                    Text("Model")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    Picker("Model", selection: $settings.openAIModel) {
+                        Text("GPT-4o Mini (Recommended)").tag("gpt-4o-mini")
+                        Text("GPT-4o (Best)").tag("gpt-4o")
+                        Text("GPT-4 Turbo").tag("gpt-4-turbo")
+                        Text("GPT-3.5 Turbo (Cheapest)").tag("gpt-3.5-turbo")
+                    }
+                }
+                .padding()
+                .background(Color.blue.opacity(0.05))
+                .cornerRadius(8)
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Using local Ollama with llama3.2:3b")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text("Make sure Ollama is running: ollama serve")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .background(Color.gray.opacity(0.1))
+                .cornerRadius(8)
+            }
+
+            Spacer()
+        }
+        .padding()
+        .frame(width: 350, height: 400)
     }
 }
 

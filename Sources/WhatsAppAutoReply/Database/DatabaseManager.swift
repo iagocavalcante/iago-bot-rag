@@ -15,6 +15,7 @@ class DatabaseManager {
     private let contactName = Expression<String>("name")
     private let autoReplyEnabled = Expression<Bool>("auto_reply_enabled")
     private let isGroup = Expression<Bool>("is_group")
+    private let styleProfileJSON = Expression<String?>("style_profile")
     private let contactCreatedAt = Expression<Date>("created_at")
 
     // Message columns
@@ -75,6 +76,22 @@ class DatabaseManager {
         } catch {
             // Column likely already exists, ignore
         }
+
+        // Add style_profile column if it doesn't exist
+        do {
+            _ = try db?.run("ALTER TABLE contacts ADD COLUMN style_profile TEXT")
+            print("Migration: added style_profile column")
+        } catch {
+            // Column likely already exists, ignore
+        }
+    }
+
+    func updateContactStyleProfile(id: Int64, profile: StyleProfile) throws {
+        guard let db = db else { throw DatabaseError.connectionFailed }
+
+        let contact = contacts.filter(contactId == id)
+        let json = profile.toJSON()
+        try db.run(contact.update(styleProfileJSON <- json))
     }
 
     // MARK: - Contact Operations
