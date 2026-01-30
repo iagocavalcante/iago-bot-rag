@@ -125,6 +125,52 @@ class AccessibilityHelper {
         print("Enter key posted to WhatsApp PID \(pid)")
     }
 
+    /// Press keyboard shortcut (e.g., Cmd+R for Reply in WhatsApp)
+    static func pressKeyCombo(keyCode: CGKeyCode, modifiers: CGEventFlags) {
+        guard let whatsApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "net.whatsapp.WhatsApp" }) else {
+            print("WhatsApp not running")
+            return
+        }
+
+        let pid = whatsApp.processIdentifier
+        let source = CGEventSource(stateID: .hidSystemState)
+
+        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true)
+        keyDown?.flags = modifiers
+        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
+        keyUp?.flags = modifiers
+
+        keyDown?.postToPid(pid)
+        Thread.sleep(forTimeInterval: 0.05)
+        keyUp?.postToPid(pid)
+
+        print("Key combo posted to WhatsApp PID \(pid)")
+    }
+
+    /// Press Cmd+R (WhatsApp's Reply shortcut)
+    static func pressReplyShortcut() {
+        // 'R' key code is 15
+        pressKeyCombo(keyCode: 15, modifiers: .maskCommand)
+    }
+
+    /// Press Escape key (to cancel/close dialogs)
+    static func pressEscape() {
+        guard let whatsApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "net.whatsapp.WhatsApp" }) else {
+            return
+        }
+
+        let pid = whatsApp.processIdentifier
+        let source = CGEventSource(stateID: .hidSystemState)
+
+        // Escape key code is 53
+        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 53, keyDown: true)
+        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 53, keyDown: false)
+
+        keyDown?.postToPid(pid)
+        Thread.sleep(forTimeInterval: 0.05)
+        keyUp?.postToPid(pid)
+    }
+
     /// Copy text to clipboard and paste (more reliable than typing)
     static func pasteText(_ text: String) {
         // Save current clipboard

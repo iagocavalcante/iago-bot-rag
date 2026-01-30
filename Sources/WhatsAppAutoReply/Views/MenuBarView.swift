@@ -350,6 +350,15 @@ struct SettingsView: View {
                             .foregroundColor(.secondary)
                     }
 
+                    // Reply Mode toggle
+                    VStack(alignment: .leading, spacing: 2) {
+                        Toggle("Reply Mode", isOn: $settings.useReplyMode)
+
+                        Text("Quote original message (Cmd+R)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+
                     // RAG toggle (only show if OpenAI configured)
                     if settings.isOpenAIConfigured {
                         VStack(alignment: .leading, spacing: 2) {

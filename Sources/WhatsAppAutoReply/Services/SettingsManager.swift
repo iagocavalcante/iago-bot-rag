@@ -33,6 +33,7 @@ class SettingsManager: ObservableObject {
     private let groupTopicParticipationKey = "group_topic_participation"
     private let audioTranscriptionKey = "audio_transcription"
     private let imageAnalysisKey = "image_analysis"
+    private let useReplyModeKey = "use_reply_mode"
 
     // Legacy key for migration
     private let useOpenAIKey = "use_openai"
@@ -122,6 +123,13 @@ class SettingsManager: ObservableObject {
         }
     }
 
+    /// Whether to use WhatsApp's native Reply feature (quotes the message)
+    @Published var useReplyMode: Bool {
+        didSet {
+            defaults.set(useReplyMode, forKey: useReplyModeKey)
+        }
+    }
+
     // MARK: - Initialization
 
     init() {
@@ -135,6 +143,7 @@ class SettingsManager: ObservableObject {
         self.groupTopicParticipation = defaults.bool(forKey: groupTopicParticipationKey)
         self.audioTranscription = defaults.bool(forKey: audioTranscriptionKey)
         self.imageAnalysis = defaults.bool(forKey: imageAnalysisKey)
+        self.useReplyMode = defaults.bool(forKey: useReplyModeKey)
 
         // Migrate from legacy useOpenAI setting
         if let providerRaw = defaults.string(forKey: aiProviderKey),

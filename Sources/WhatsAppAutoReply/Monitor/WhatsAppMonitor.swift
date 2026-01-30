@@ -567,6 +567,84 @@ class WhatsAppMonitor: ObservableObject {
         return false
     }
 
+    /// Send a message as a reply to the last received message
+    /// Uses WhatsApp's native Reply feature (Cmd+R) to quote the message being replied to
+    func sendReplyMessage(_ text: String, to contactName: String? = nil) {
+        debugLog("Attempting to send REPLY message: '\(text.prefix(30))...'")
+
+        guard let window = AccessibilityHelper.findWhatsAppWindow() else {
+            debugLog("ERROR: WhatsApp window not found for reply")
+            return
+        }
+
+        // If contact name provided, select that chat first
+        if let contact = contactName {
+            if !selectChat(contact, in: window) {
+                debugLog("WARNING: Could not select chat for '\(contact)', replying to current chat")
+            }
+        }
+
+        // WhatsApp needs to be active for Cmd+R to work reliably
+        if let whatsApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "net.whatsapp.WhatsApp" }) {
+            whatsApp.activate(options: .activateIgnoringOtherApps)
+            Thread.sleep(forTimeInterval: 0.3)
+        }
+
+        // First, we need to make sure the last message is selected/focused
+        // Navigate to the end of the chat to ensure we're replying to the latest message
+        // Cmd+Down goes to bottom of chat
+        AccessibilityHelper.pressKeyCombo(keyCode: 125, modifiers: .maskCommand) // Down arrow
+        Thread.sleep(forTimeInterval: 0.2)
+
+        // Press Cmd+R to trigger reply mode
+        debugLog("Triggering reply mode with Cmd+R...")
+        AccessibilityHelper.pressReplyShortcut()
+        Thread.sleep(forTimeInterval: 0.4) // Wait for reply UI to appear
+
+        // Find the text input field (should now be in reply mode)
+        func findInputField(_ element: AXUIElement, depth: Int = 0) -> AXUIElement? {
+            guard depth < 15 else { return nil }
+
+            let role = AccessibilityHelper.getRole(element)
+
+            if role == "AXTextArea" || role == "AXTextField" {
+                return element
+            }
+
+            for child in AccessibilityHelper.getChildren(element) {
+                if let found = findInputField(child, depth: depth + 1) {
+                    return found
+                }
+            }
+            return nil
+        }
+
+        guard let inputField = findInputField(window) else {
+            debugLog("ERROR: Could not find input field for reply")
+            return
+        }
+
+        // Focus the input field and type the reply
+        AccessibilityHelper.setFocus(inputField)
+        Thread.sleep(forTimeInterval: 0.2)
+
+        // Try setting value directly first
+        debugLog("Setting reply text...")
+        if AccessibilityHelper.setValue(inputField, value: text) {
+            Thread.sleep(forTimeInterval: 0.2)
+            AccessibilityHelper.pressEnter()
+            debugLog("Reply sent via direct value set + Enter")
+            return
+        }
+
+        // Fallback: use paste method
+        debugLog("Direct set failed, using paste method...")
+        AccessibilityHelper.pasteText(text)
+        Thread.sleep(forTimeInterval: 0.5)
+        AccessibilityHelper.pressEnter()
+        debugLog("Reply sent via paste + Enter")
+    }
+
     private func fallbackSendWithFocus(text: String, inputField: AXUIElement) {
         // Bring WhatsApp to front (only as fallback)
         if let whatsApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "net.whatsapp.WhatsApp" }) {

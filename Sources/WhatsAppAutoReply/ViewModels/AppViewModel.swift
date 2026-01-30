@@ -42,6 +42,17 @@ class AppViewModel: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
 
+    /// Track group names we've already responded to with trick detection
+    /// This prevents responding multiple times to the same renamed group
+    private var handledTrickNames: Set<String> = []
+
+    /// Track when monitoring started to avoid responding to old messages
+    private var monitoringStartTime: Date = Date()
+
+    /// Maximum age of messages to respond to (in seconds)
+    /// Messages older than this will be ignored
+    private let maxMessageAge: TimeInterval = 20 * 60 // 20 minutes
+
     struct PendingResponse {
         let contactName: String
         let incomingMessage: String
@@ -144,6 +155,11 @@ class AppViewModel: ObservableObject {
         let hasActiveContacts = contacts.contains { $0.autoReplyEnabled }
 
         if hasActiveContacts && !monitor.isMonitoring {
+            // Reset the monitoring start time when we begin monitoring
+            monitoringStartTime = Date()
+            // Clear handled trick names for fresh session
+            handledTrickNames.removeAll()
+            log("Starting monitoring - messages older than 20 min will be ignored")
             monitor.startMonitoring()
         } else if !hasActiveContacts && monitor.isMonitoring {
             monitor.stopMonitoring()
@@ -152,6 +168,24 @@ class AppViewModel: ObservableObject {
 
     private func handleNewMessage(_ detected: DetectedMessage) async {
         log("Processing message from '\(detected.contactName)'")
+
+        // Check if message was detected within the valid time window
+        // Skip messages that are too old (detected before monitoring started or older than maxMessageAge)
+        let messageAge = Date().timeIntervalSince(detected.timestamp)
+        let timeSinceMonitoringStarted = Date().timeIntervalSince(monitoringStartTime)
+
+        // Grace period: ignore messages detected in the first 5 seconds after monitoring starts
+        // This prevents responding to messages that were already visible when we started
+        if timeSinceMonitoringStarted < 5 {
+            log("Skipping message - monitoring just started (grace period)")
+            return
+        }
+
+        // Skip messages older than maxMessageAge (20 minutes)
+        if messageAge > maxMessageAge {
+            log("Skipping old message - detected \(Int(messageAge))s ago (max: \(Int(maxMessageAge))s)")
+            return
+        }
 
         // Check if this contact has auto-reply enabled
         // Use fuzzy matching to handle group renames
@@ -170,22 +204,36 @@ class AppViewModel: ObservableObject {
 
         // Check if group name itself is trying to trick the bot (sneaky!)
         // Use the DETECTED name, not stored name, to catch renamed groups
+        // Only respond ONCE per unique trick name (not on every message)
         if matchingContact!.isGroup && detected.contactName != contactName {
-            if let funnyResponse = detectGroupNameTrick(detected.contactName) {
-                log("Sneaky group name detected! Responding with humor...")
-                pendingResponse = PendingResponse(
-                    contactName: contactName,
-                    incomingMessage: detected.content,
-                    response: funnyResponse,
-                    timestamp: Date()
-                )
+            // Normalize the detected name for tracking (remove ", Mentioned" suffix etc.)
+            let normalizedTrickName = detected.contactName
+                .replacingOccurrences(of: ", Mentioned", with: "")
+                .replacingOccurrences(of: ", Pinned", with: "")
+                .replacingOccurrences(of: ", Muted", with: "")
 
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
+            // Only respond if we haven't already handled this trick name
+            if !handledTrickNames.contains(normalizedTrickName) {
+                if let funnyResponse = detectGroupNameTrick(normalizedTrickName) {
+                    log("Sneaky group name detected! Responding with humor (first time only)...")
+                    handledTrickNames.insert(normalizedTrickName)
 
-                if pendingResponse != nil {
-                    sendPendingResponse()
+                    pendingResponse = PendingResponse(
+                        contactName: contactName,
+                        incomingMessage: detected.content,
+                        response: funnyResponse,
+                        timestamp: Date()
+                    )
+
+                    try? await Task.sleep(nanoseconds: 5_000_000_000)
+
+                    if pendingResponse != nil {
+                        sendPendingResponse()
+                    }
+                    return
                 }
-                return
+            } else {
+                log("Trick name already handled, skipping: \(normalizedTrickName.prefix(30))...")
             }
         }
 
@@ -263,7 +311,13 @@ class AppViewModel: ObservableObject {
     func sendPendingResponse() {
         guard let pending = pendingResponse else { return }
 
-        monitor.sendMessage(pending.response, to: pending.contactName)
+        // Use reply mode if enabled (quotes the original message)
+        if SettingsManager.shared.useReplyMode {
+            log("Sending reply with quote (Reply Mode ON)")
+            monitor.sendReplyMessage(pending.response, to: pending.contactName)
+        } else {
+            monitor.sendMessage(pending.response, to: pending.contactName)
+        }
 
         responseLog.insert(ResponseLogEntry(
             contactName: pending.contactName,
