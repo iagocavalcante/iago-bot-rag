@@ -1,5 +1,19 @@
 import Foundation
 
+/// Represents a conversation thread with similarity score
+struct ConversationThread {
+    let messages: [ConversationMessage]
+    let similarity: Float
+
+    /// Format thread as conversation for prompt
+    func formatted(contactName: String, userName: String) -> String {
+        messages.map { msg in
+            let speaker = msg.isUser ? userName : contactName
+            return "\(speaker): \(msg.content)"
+        }.joined(separator: "\n")
+    }
+}
+
 /// Manages RAG (Retrieval Augmented Generation) for semantic context
 class RAGManager {
     static let shared = RAGManager()
@@ -50,7 +64,11 @@ class RAGManager {
             return
         }
 
-        // Build conversation pairs (contact message + user response)
+        // Build conversation threads (3-6 message exchanges)
+        let conversationThreads = buildConversationThreads(from: messages)
+        print("RAG: Found \(conversationThreads.count) conversation threads to embed")
+
+        // Also build legacy pairs for backward compatibility
         var conversationPairs: [(contactMsg: Message, userResponse: Message)] = []
         for i in 0..<(messages.count - 1) {
             if messages[i].sender == .contact && messages[i + 1].sender == .user {
@@ -58,24 +76,68 @@ class RAGManager {
             }
         }
 
-        print("RAG: Found \(conversationPairs.count) conversation pairs to embed")
-
-        // Process in batches to avoid API limits
-        let batchSize = 20
+        let totalItems = conversationThreads.count + conversationPairs.count
         var processed = 0
 
-        for batchStart in stride(from: 0, to: conversationPairs.count, by: batchSize) {
-            let batchEnd = min(batchStart + batchSize, conversationPairs.count)
+        // Process conversation threads
+        let threadBatchSize = 10
+        for batchStart in stride(from: 0, to: conversationThreads.count, by: threadBatchSize) {
+            let batchEnd = min(batchStart + threadBatchSize, conversationThreads.count)
+            let batch = Array(conversationThreads[batchStart..<batchEnd])
+
+            // Embed the full conversation context for better semantic matching
+            let texts = batch.map { thread -> String in
+                thread.map { msg in
+                    "\(msg.sender == .contact ? "them" : "me"): \(msg.content)"
+                }.joined(separator: " | ")
+            }
+
+            do {
+                let embeddings = try await embeddingService.embedBatch(texts)
+
+                for (i, thread) in batch.enumerated() {
+                    let convoMessages = thread.map { msg in
+                        ConversationMessage(
+                            content: msg.content,
+                            isUser: msg.sender == .user,
+                            timestamp: msg.timestamp
+                        )
+                    }
+
+                    let embedded = EmbeddedConversation(
+                        id: "conv_\(contactId)_\(thread.first?.id ?? 0)",
+                        contactId: contactId,
+                        messages: convoMessages,
+                        embedding: embeddings[i],
+                        timestamp: thread.first?.timestamp ?? Date(),
+                        topic: nil
+                    )
+
+                    vectorStore.addConversation(embedded)
+                }
+
+                processed += batch.count
+                progress?(processed, totalItems)
+
+                print("RAG: Embedded \(processed)/\(totalItems) items (threads)")
+                try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+
+            } catch {
+                print("RAG: Thread batch embedding failed: \(error)")
+            }
+        }
+
+        // Process legacy pairs for backward compatibility
+        let pairBatchSize = 20
+        for batchStart in stride(from: 0, to: conversationPairs.count, by: pairBatchSize) {
+            let batchEnd = min(batchStart + pairBatchSize, conversationPairs.count)
             let batch = Array(conversationPairs[batchStart..<batchEnd])
 
-            // Get texts to embed (contact messages)
             let texts = batch.map { $0.contactMsg.content }
 
             do {
-                // Generate embeddings
                 let embeddings = try await embeddingService.embedBatch(texts)
 
-                // Store with responses
                 for (i, pair) in batch.enumerated() {
                     var embedded = EmbeddedMessage(
                         messageId: pair.contactMsg.id,
@@ -91,23 +153,61 @@ class RAGManager {
                 }
 
                 processed += batch.count
-                progress?(processed, conversationPairs.count)
+                progress?(processed, totalItems)
 
-                print("RAG: Embedded \(processed)/\(conversationPairs.count) pairs")
-
-                // Rate limiting - small delay between batches
+                print("RAG: Embedded \(processed)/\(totalItems) items (pairs)")
                 try await Task.sleep(nanoseconds: 100_000_000) // 100ms
 
             } catch {
-                print("RAG: Batch embedding failed: \(error)")
-                // Continue with next batch
+                print("RAG: Pair batch embedding failed: \(error)")
             }
         }
 
         // Save to disk
         vectorStore.saveToDisk()
+        vectorStore.saveConversationsToDisk()
 
-        print("RAG: Completed embedding generation. Total: \(vectorStore.count) embeddings")
+        print("RAG: Completed embedding generation. Total: \(vectorStore.count) embeddings, \(vectorStore.conversationCount) conversations")
+    }
+
+    /// Build conversation threads from messages
+    /// A thread is a sequence of exchanges where messages are close in time (within 30 min)
+    private func buildConversationThreads(from messages: [Message]) -> [[Message]] {
+        var threads: [[Message]] = []
+        var currentThread: [Message] = []
+
+        for (index, message) in messages.enumerated() {
+            if currentThread.isEmpty {
+                currentThread.append(message)
+            } else {
+                // Check time gap - if more than 30 minutes, start new thread
+                let lastMessage = currentThread.last!
+                let timeDiff = message.timestamp.timeIntervalSince(lastMessage.timestamp)
+
+                if timeDiff > 1800 { // 30 minutes in seconds
+                    // Save current thread if it has at least 4 messages (2 exchanges)
+                    if currentThread.count >= 4 {
+                        threads.append(currentThread)
+                    }
+                    currentThread = [message]
+                } else {
+                    currentThread.append(message)
+
+                    // Cap thread at 8 messages to keep context focused
+                    if currentThread.count >= 8 {
+                        threads.append(currentThread)
+                        currentThread = []
+                    }
+                }
+            }
+        }
+
+        // Don't forget last thread
+        if currentThread.count >= 4 {
+            threads.append(currentThread)
+        }
+
+        return threads
     }
 
     // MARK: - Semantic Search
@@ -142,13 +242,57 @@ class RAGManager {
         return results
     }
 
+    /// Find semantically similar conversation threads for richer context
+    func findSimilarThreads(
+        for message: String,
+        contactId: Int64,
+        limit: Int = 3
+    ) async throws -> [ConversationThread] {
+        guard settings.isOpenAIConfigured else {
+            return []
+        }
+
+        guard vectorStore.hasConversations(for: contactId) else {
+            print("RAG: No conversation threads for contact \(contactId)")
+            return []
+        }
+
+        // Embed the query
+        let queryEmbedding = try await embeddingService.embed(message)
+
+        // Find similar conversation threads
+        let results = vectorStore.findSimilarConversationThreads(
+            queryEmbedding: queryEmbedding,
+            contactId: contactId,
+            limit: limit
+        )
+
+        print("RAG: Found \(results.count) similar conversation threads (top similarity: \(results.first?.similarity ?? 0))")
+
+        // Convert to ConversationThread format
+        return results.map { (convo, similarity) in
+            ConversationThread(
+                messages: convo.messages,
+                similarity: similarity
+            )
+        }
+    }
+
     // MARK: - Stats
 
     var embeddingCount: Int {
         vectorStore.count
     }
 
+    var conversationCount: Int {
+        vectorStore.conversationCount
+    }
+
     func hasEmbeddings(for contactId: Int64) -> Bool {
         vectorStore.hasEmbeddings(for: contactId)
+    }
+
+    func hasConversations(for contactId: Int64) -> Bool {
+        vectorStore.hasConversations(for: contactId)
     }
 }

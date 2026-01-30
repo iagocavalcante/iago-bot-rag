@@ -86,21 +86,36 @@ class ResponseGenerator {
         }
 
         // Take most recent relevant pairs
-        var recentPairs = Array(pairs.suffix(15))
+        let recentPairs = Array(pairs.suffix(15))
 
         // Use RAG for semantic context if enabled
         var ragContext: [(contactMessage: String, userResponse: String)]? = nil
+        var ragThreads: [ConversationThread]? = nil
+
         if settings.useRAG && settings.isOpenAIConfigured {
             do {
-                let similarContexts = try await ragManager.findSimilarContext(
+                // Try conversation threads first (richer context)
+                let threads = try await ragManager.findSimilarThreads(
                     for: sanitizedMessage,
                     contactId: contact.id,
-                    limit: 5
+                    limit: 3
                 )
 
-                if !similarContexts.isEmpty {
-                    print("RAG: Using \(similarContexts.count) semantically similar examples")
-                    ragContext = similarContexts.map { ($0.contactMessage, $0.userResponse) }
+                if !threads.isEmpty {
+                    print("RAG: Using \(threads.count) conversation threads for context")
+                    ragThreads = threads
+                } else {
+                    // Fallback to legacy single-pair context
+                    let similarContexts = try await ragManager.findSimilarContext(
+                        for: sanitizedMessage,
+                        contactId: contact.id,
+                        limit: 5
+                    )
+
+                    if !similarContexts.isEmpty {
+                        print("RAG: Using \(similarContexts.count) semantically similar examples")
+                        ragContext = similarContexts.map { ($0.contactMessage, $0.userResponse) }
+                    }
                 }
             } catch {
                 print("RAG: Semantic search failed: \(error)")
@@ -120,7 +135,8 @@ class ResponseGenerator {
                     pairs: recentPairs,
                     message: sanitizedMessage,
                     styleProfile: styleProfile,
-                    ragContext: ragContext
+                    ragContext: ragContext,
+                    ragThreads: ragThreads
                 )
                 print("OpenAI response received: \(response.prefix(50))...")
             } catch {
@@ -134,7 +150,8 @@ class ResponseGenerator {
                 pairs: recentPairs,
                 message: sanitizedMessage,
                 styleProfile: styleProfile,
-                ragContext: ragContext
+                ragContext: ragContext,
+                ragThreads: ragThreads
             )
         }
 
@@ -152,7 +169,8 @@ class ResponseGenerator {
         pairs: [(Message, Message)],
         message: String,
         styleProfile: StyleProfile,
-        ragContext: [(contactMessage: String, userResponse: String)]? = nil
+        ragContext: [(contactMessage: String, userResponse: String)]? = nil,
+        ragThreads: [ConversationThread]? = nil
     ) async throws -> String {
         guard let client = createOpenAIClient() else {
             throw GeneratorError.openAINotConfigured
@@ -179,8 +197,18 @@ class ResponseGenerator {
         // Build user prompt with examples
         var userPrompt = ""
 
-        // Add RAG context first (most semantically relevant)
-        if let rag = ragContext, !rag.isEmpty {
+        // Add conversation threads first (richest context with full conversation flow)
+        if let threads = ragThreads, !threads.isEmpty {
+            userPrompt += "=== SIMILAR PAST CONVERSATIONS (study the flow and how you responded) ===\n\n"
+            for (index, thread) in threads.enumerated() {
+                userPrompt += "--- Conversation \(index + 1) (similarity: \(String(format: "%.0f", thread.similarity * 100))%) ---\n"
+                userPrompt += thread.formatted(contactName: contactName, userName: userName)
+                userPrompt += "\n\n"
+            }
+            userPrompt += "=== END SIMILAR CONVERSATIONS ===\n\n"
+        }
+        // Fallback to legacy single-pair context
+        else if let rag = ragContext, !rag.isEmpty {
             userPrompt += "HIGHLY RELEVANT similar conversations (use these as primary reference):\n\n"
             for (contactMsg, userResp) in rag {
                 userPrompt += "\(contactName): \(contactMsg)\n"
@@ -210,7 +238,8 @@ class ResponseGenerator {
         pairs: [(Message, Message)],
         message: String,
         styleProfile: StyleProfile,
-        ragContext: [(contactMessage: String, userResponse: String)]? = nil
+        ragContext: [(contactMessage: String, userResponse: String)]? = nil,
+        ragThreads: [ConversationThread]? = nil
     ) async throws -> String {
         let userName = settings.userName
 
@@ -227,8 +256,18 @@ class ResponseGenerator {
 
         """
 
-        // Add RAG context if available
-        if let rag = ragContext, !rag.isEmpty {
+        // Add conversation threads first (richest context)
+        if let threads = ragThreads, !threads.isEmpty {
+            prompt += "=== SIMILAR PAST CONVERSATIONS ===\n\n"
+            for (index, thread) in threads.enumerated() {
+                prompt += "--- Conversation \(index + 1) ---\n"
+                prompt += thread.formatted(contactName: contactName, userName: userName)
+                prompt += "\n\n"
+            }
+            prompt += "=== END SIMILAR CONVERSATIONS ===\n\n"
+        }
+        // Fallback to legacy single-pair context
+        else if let rag = ragContext, !rag.isEmpty {
             prompt += "HIGHLY RELEVANT similar conversations:\n\n"
             for (contactMsg, userResp) in rag {
                 prompt += "\(contactName): \(contactMsg)\n"
