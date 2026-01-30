@@ -274,6 +274,15 @@ class AppViewModel: ObservableObject {
 
                 logFunc("Parsed \(parsed.count) messages", false)
 
+                // Detect if this is a group chat
+                let isGroupChat = parser.isGroupChat(messages: parsed)
+                if isGroupChat {
+                    let senders = parser.getUniqueSenders(messages: parsed)
+                    logFunc("Detected GROUP chat with \(senders.count) participants", false)
+                } else {
+                    logFunc("Detected 1-on-1 chat", false)
+                }
+
                 await MainActor.run { [weak self] in
                     self?.importProgress = ImportProgress(contactName: contactName, current: 0, total: parsed.count)
                 }
@@ -283,10 +292,15 @@ class AppViewModel: ObservableObject {
                 if let existing = try dbManager.getContactByName(contactName) {
                     contact = existing
                     logFunc("Found existing contact: \(existing.name)", false)
+                    // Update isGroup flag if needed
+                    if existing.isGroup != isGroupChat {
+                        try dbManager.updateContactIsGroup(id: existing.id, isGroup: isGroupChat)
+                        logFunc("Updated group status: \(isGroupChat)", false)
+                    }
                 } else {
-                    let id = try dbManager.insertContact(Contact(name: contactName))
-                    contact = Contact(id: id, name: contactName)
-                    logFunc("Created new contact: \(contactName)", false)
+                    let id = try dbManager.insertContact(Contact(name: contactName, isGroup: isGroupChat))
+                    contact = Contact(id: id, name: contactName, isGroup: isGroupChat)
+                    logFunc("Created new contact: \(contactName) (group: \(isGroupChat))", false)
                 }
 
                 // Convert messages

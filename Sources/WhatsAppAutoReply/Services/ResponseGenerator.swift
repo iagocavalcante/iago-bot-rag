@@ -28,6 +28,15 @@ class ResponseGenerator {
             return nil
         }
 
+        // For groups, only respond if mentioned
+        if contact.isGroup {
+            if !isMentioned(in: message) {
+                print("Group message but not mentioned, skipping: \(contactName)")
+                return nil
+            }
+            print("Mentioned in group, will respond: \(contactName)")
+        }
+
         // Sanitize input to prevent prompt injection
         let sanitizedMessage = sanitizeInput(message)
 
@@ -78,6 +87,50 @@ class ResponseGenerator {
         }
 
         return pairs
+    }
+
+    /// Check if the user is mentioned in a group message
+    private func isMentioned(in message: String) -> Bool {
+        let lowerMessage = message.lowercased()
+
+        // Check for direct @mention or name mention
+        let mentionPatterns = [
+            "@\(userName.lowercased())",           // @Iago Cavalcante
+            "@\(userName.split(separator: " ").first?.lowercased() ?? "")", // @Iago
+            userName.lowercased(),                  // Iago Cavalcante
+            userName.split(separator: " ").first?.lowercased() ?? "", // Iago
+            "iago",                                 // Common variations
+        ]
+
+        for pattern in mentionPatterns {
+            if !pattern.isEmpty && lowerMessage.contains(pattern) {
+                return true
+            }
+        }
+
+        // Check for reply indicator (WhatsApp shows this in accessibility)
+        if lowerMessage.contains("replied to your message") ||
+           lowerMessage.contains("respondeu à sua mensagem") {
+            return true
+        }
+
+        // Check for direct questions directed at user
+        let questionPatterns = [
+            "iago,",
+            "iago?",
+            "@iago",
+            "e aí iago",
+            "ei iago",
+            "fala iago",
+        ]
+
+        for pattern in questionPatterns {
+            if lowerMessage.contains(pattern) {
+                return true
+            }
+        }
+
+        return false
     }
 
     /// Sanitize incoming message to prevent prompt injection

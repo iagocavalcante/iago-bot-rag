@@ -190,6 +190,19 @@ class ChatParser {
         }
     }
 
+    /// Detect if messages are from a group chat (more than 2 unique senders)
+    func isGroupChat(messages: [ParsedMessage]) -> Bool {
+        let uniqueSenders = Set(messages.map { $0.sender })
+        // In a 1-on-1 chat, there are only 2 senders: you and the contact
+        // In a group, there are 3+ senders
+        return uniqueSenders.count > 2
+    }
+
+    /// Get all unique senders (for group participant list)
+    func getUniqueSenders(messages: [ParsedMessage]) -> [String] {
+        Array(Set(messages.map { $0.sender })).sorted()
+    }
+
     enum ParserError: Error {
         case invalidEncoding
         case fileNotFound

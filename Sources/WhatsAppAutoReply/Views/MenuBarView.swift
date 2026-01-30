@@ -191,20 +191,38 @@ struct ContactRow: View {
     let onToggle: () -> Void
 
     var body: some View {
-        HStack {
-            Circle()
-                .fill(contact.autoReplyEnabled ? Color.green : Color.gray)
-                .frame(width: 8, height: 8)
-            Text(contact.name)
-                .font(.system(size: 13))
-            Spacer()
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Circle()
+                    .fill(contact.autoReplyEnabled ? Color.green : Color.gray)
+                    .frame(width: 8, height: 8)
 
-            Toggle("", isOn: Binding(
-                get: { contact.autoReplyEnabled },
-                set: { _ in onToggle() }
-            ))
-            .toggleStyle(.switch)
-            .controlSize(.small)
+                // Group indicator
+                if contact.isGroup {
+                    Image(systemName: "person.3.fill")
+                        .font(.system(size: 10))
+                        .foregroundColor(.blue)
+                }
+
+                Text(contact.name)
+                    .font(.system(size: 13))
+                Spacer()
+
+                Toggle("", isOn: Binding(
+                    get: { contact.autoReplyEnabled },
+                    set: { _ in onToggle() }
+                ))
+                .toggleStyle(.switch)
+                .controlSize(.small)
+            }
+
+            // Group hint
+            if contact.isGroup && contact.autoReplyEnabled {
+                Text("Only responds when @mentioned")
+                    .font(.system(size: 9))
+                    .foregroundColor(.secondary)
+                    .padding(.leading, 16)
+            }
         }
     }
 }

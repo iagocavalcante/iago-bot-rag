@@ -14,6 +14,7 @@ class DatabaseManager {
     private let contactId = Expression<Int64>("id")
     private let contactName = Expression<String>("name")
     private let autoReplyEnabled = Expression<Bool>("auto_reply_enabled")
+    private let isGroup = Expression<Bool>("is_group")
     private let contactCreatedAt = Expression<Date>("created_at")
 
     // Message columns
@@ -46,6 +47,7 @@ class DatabaseManager {
                 t.column(contactId, primaryKey: .autoincrement)
                 t.column(contactName, unique: true)
                 t.column(autoReplyEnabled, defaultValue: false)
+                t.column(isGroup, defaultValue: false)
                 t.column(contactCreatedAt)
             })
 
@@ -57,8 +59,21 @@ class DatabaseManager {
                 t.column(messageTimestamp)
                 t.foreignKey(messageContactId, references: contacts, contactId)
             })
+
+            // Migration: add is_group column if missing
+            migrateIfNeeded()
         } catch {
             print("Table creation error: \(error)")
+        }
+    }
+
+    private func migrateIfNeeded() {
+        // Add is_group column if it doesn't exist
+        do {
+            _ = try db?.run("ALTER TABLE contacts ADD COLUMN is_group BOOLEAN DEFAULT 0")
+            print("Migration: added is_group column")
+        } catch {
+            // Column likely already exists, ignore
         }
     }
 
@@ -70,9 +85,17 @@ class DatabaseManager {
         let insert = contacts.insert(
             contactName <- contact.name,
             autoReplyEnabled <- contact.autoReplyEnabled,
+            isGroup <- contact.isGroup,
             contactCreatedAt <- contact.createdAt
         )
         return try db.run(insert)
+    }
+
+    func updateContactIsGroup(id: Int64, isGroup groupFlag: Bool) throws {
+        guard let db = db else { throw DatabaseError.connectionFailed }
+
+        let contact = contacts.filter(contactId == id)
+        try db.run(contact.update(isGroup <- groupFlag))
     }
 
     func getAllContacts() throws -> [Contact] {
@@ -83,6 +106,7 @@ class DatabaseManager {
                 id: row[contactId],
                 name: row[contactName],
                 autoReplyEnabled: row[autoReplyEnabled],
+                isGroup: (try? row.get(isGroup)) ?? false,
                 createdAt: row[contactCreatedAt]
             )
         }
@@ -104,6 +128,7 @@ class DatabaseManager {
                 id: row[contactId],
                 name: row[contactName],
                 autoReplyEnabled: row[autoReplyEnabled],
+                isGroup: (try? row.get(isGroup)) ?? false,
                 createdAt: row[contactCreatedAt]
             )
         }
