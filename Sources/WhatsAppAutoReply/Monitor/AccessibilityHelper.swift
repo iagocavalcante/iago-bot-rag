@@ -93,10 +93,26 @@ class AccessibilityHelper {
     }
 
     static func pressEnter() {
-        let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: 36, keyDown: true)
-        let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: 36, keyDown: false)
-        keyDown?.post(tap: .cghidEventTap)
-        keyUp?.post(tap: .cghidEventTap)
+        // Get WhatsApp's process ID for targeted key events
+        if let whatsApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "net.whatsapp.WhatsApp" }) {
+            let pid = whatsApp.processIdentifier
+
+            let source = CGEventSource(stateID: .hidSystemState)
+            let enterKeyCode: CGKeyCode = 36
+
+            let keyDown = CGEvent(keyboardEventSource: source, virtualKey: enterKeyCode, keyDown: true)
+            let keyUp = CGEvent(keyboardEventSource: source, virtualKey: enterKeyCode, keyDown: false)
+
+            // Post to specific process
+            keyDown?.postToPid(pid)
+            keyUp?.postToPid(pid)
+        } else {
+            // Fallback to global post
+            let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: 36, keyDown: true)
+            let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: 36, keyDown: false)
+            keyDown?.post(tap: .cghidEventTap)
+            keyUp?.post(tap: .cghidEventTap)
+        }
     }
 
     /// Copy text to clipboard and paste (more reliable than typing)
@@ -109,6 +125,11 @@ class AccessibilityHelper {
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
 
+        // Get WhatsApp's process ID
+        let pid = NSWorkspace.shared.runningApplications
+            .first(where: { $0.bundleIdentifier == "net.whatsapp.WhatsApp" })?
+            .processIdentifier
+
         // Cmd+V to paste
         let source = CGEventSource(stateID: .hidSystemState)
         let vKeyCode: CGKeyCode = 9 // 'v' key
@@ -118,8 +139,13 @@ class AccessibilityHelper {
         let keyUp = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false)
         keyUp?.flags = .maskCommand
 
-        keyDown?.post(tap: .cghidEventTap)
-        keyUp?.post(tap: .cghidEventTap)
+        if let pid = pid {
+            keyDown?.postToPid(pid)
+            keyUp?.postToPid(pid)
+        } else {
+            keyDown?.post(tap: .cghidEventTap)
+            keyUp?.post(tap: .cghidEventTap)
+        }
 
         // Restore old clipboard after a delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
