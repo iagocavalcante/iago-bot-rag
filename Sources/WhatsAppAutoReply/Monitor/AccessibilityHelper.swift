@@ -98,4 +98,35 @@ class AccessibilityHelper {
         keyDown?.post(tap: .cghidEventTap)
         keyUp?.post(tap: .cghidEventTap)
     }
+
+    /// Copy text to clipboard and paste (more reliable than typing)
+    static func pasteText(_ text: String) {
+        // Save current clipboard
+        let pasteboard = NSPasteboard.general
+        let oldContents = pasteboard.string(forType: .string)
+
+        // Copy our text
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+
+        // Cmd+V to paste
+        let source = CGEventSource(stateID: .hidSystemState)
+        let vKeyCode: CGKeyCode = 9 // 'v' key
+
+        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true)
+        keyDown?.flags = .maskCommand
+        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false)
+        keyUp?.flags = .maskCommand
+
+        keyDown?.post(tap: .cghidEventTap)
+        keyUp?.post(tap: .cghidEventTap)
+
+        // Restore old clipboard after a delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            if let old = oldContents {
+                pasteboard.clearContents()
+                pasteboard.setString(old, forType: .string)
+            }
+        }
+    }
 }

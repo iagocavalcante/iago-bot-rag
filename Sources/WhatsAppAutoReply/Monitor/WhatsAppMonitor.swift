@@ -1,5 +1,6 @@
 import Foundation
 import ApplicationServices
+import AppKit
 import Combine
 
 struct DetectedMessage {
@@ -283,13 +284,23 @@ class WhatsAppMonitor: ObservableObject {
             return
         }
 
+        // Bring WhatsApp to front
+        if let whatsApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "net.whatsapp.WhatsApp" }) {
+            whatsApp.activate(options: .activateIgnoringOtherApps)
+            Thread.sleep(forTimeInterval: 0.3)
+        }
+
         debugLog("Focusing input field...")
         AccessibilityHelper.setFocus(inputField)
+        Thread.sleep(forTimeInterval: 0.3)
+
+        // Click on the input field to ensure focus
+        AXUIElementPerformAction(inputField, kAXPressAction as CFString)
         Thread.sleep(forTimeInterval: 0.2)
 
-        debugLog("Typing message...")
-        AccessibilityHelper.typeText(text)
-        Thread.sleep(forTimeInterval: 0.2)
+        debugLog("Pasting message via clipboard...")
+        AccessibilityHelper.pasteText(text)
+        Thread.sleep(forTimeInterval: 0.3)
 
         debugLog("Pressing Enter...")
         AccessibilityHelper.pressEnter()
