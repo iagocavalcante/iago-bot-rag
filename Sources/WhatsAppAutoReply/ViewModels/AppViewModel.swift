@@ -323,6 +323,19 @@ class AppViewModel: ObservableObject {
                     self?.loadContacts()
                     self?.log("Import complete: \(messages.count) messages for \(contactName)")
                 }
+
+                // Generate embeddings for RAG if OpenAI is configured
+                if SettingsManager.shared.isOpenAIConfigured && SettingsManager.shared.useRAG {
+                    logFunc("Starting RAG embedding generation...", false)
+                    do {
+                        try await RAGManager.shared.generateEmbeddings(for: contact.id) { current, total in
+                            logFunc("Embedding \(current)/\(total)", false)
+                        }
+                        logFunc("RAG embeddings complete", false)
+                    } catch {
+                        logFunc("RAG embedding failed: \(error)", true)
+                    }
+                }
             } catch {
                 logFunc("Import failed: \(error)", true)
                 await MainActor.run { [weak self] in

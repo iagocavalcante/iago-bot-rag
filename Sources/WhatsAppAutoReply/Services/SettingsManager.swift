@@ -12,6 +12,7 @@ class SettingsManager: ObservableObject {
     private let openAIModelKey = "openai_model"
     private let userNameKey = "user_name"
     private let smartResponseKey = "smart_response"
+    private let useRAGKey = "use_rag"
 
     /// OpenAI API key (stored in UserDefaults - consider Keychain for production)
     @Published var openAIKey: String {
@@ -48,12 +49,20 @@ class SettingsManager: ObservableObject {
         }
     }
 
+    /// Whether to use RAG (semantic search) for finding relevant context
+    @Published var useRAG: Bool {
+        didSet {
+            defaults.set(useRAG, forKey: useRAGKey)
+        }
+    }
+
     init() {
         self.openAIKey = defaults.string(forKey: openAIKeyKey) ?? ""
         self.useOpenAI = defaults.bool(forKey: useOpenAIKey)
         self.openAIModel = defaults.string(forKey: openAIModelKey) ?? "gpt-4o-mini"
         self.userName = defaults.string(forKey: userNameKey) ?? "Iago Cavalcante"
         self.smartResponse = defaults.object(forKey: smartResponseKey) == nil ? true : defaults.bool(forKey: smartResponseKey)
+        self.useRAG = defaults.bool(forKey: useRAGKey)
     }
 
     /// Check if OpenAI is properly configured

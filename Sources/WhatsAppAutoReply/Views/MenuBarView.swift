@@ -275,6 +275,23 @@ struct SettingsView: View {
                     .foregroundColor(.secondary)
             }
 
+            // RAG toggle (only show if OpenAI configured)
+            if settings.isOpenAIConfigured {
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("Semantic Search (RAG)", isOn: $settings.useRAG)
+
+                    Text("Uses AI to find similar past conversations for better context. Requires OpenAI API.")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+
+                    if settings.useRAG {
+                        Text("Embeddings: \(RAGManager.shared.embeddingCount)")
+                            .font(.caption2)
+                            .foregroundColor(.blue)
+                    }
+                }
+            }
+
             Spacer()
         }
         .padding()
