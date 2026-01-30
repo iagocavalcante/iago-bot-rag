@@ -317,19 +317,12 @@ class WhatsAppMonitor: ObservableObject {
 
         debugLog("Pasting message via clipboard...")
         AccessibilityHelper.pasteText(text)
-        Thread.sleep(forTimeInterval: 0.5)
+        Thread.sleep(forTimeInterval: 0.8) // Longer wait for paste to complete
 
-        // Ensure WhatsApp is still focused before Enter
-        if let whatsApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "net.whatsapp.WhatsApp" }) {
-            whatsApp.activate(options: .activateIgnoringOtherApps)
-        }
-        Thread.sleep(forTimeInterval: 0.2)
-
-        debugLog("Pressing Enter to send...")
+        debugLog("Pressing Enter to send (via AppleScript)...")
         AccessibilityHelper.pressEnter()
-        Thread.sleep(forTimeInterval: 0.1)
-        AccessibilityHelper.pressEnter() // Double tap in case first didn't register
+        Thread.sleep(forTimeInterval: 0.3)
 
-        debugLog("Message send attempted")
+        debugLog("Message send completed")
     }
 }

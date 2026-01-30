@@ -93,25 +93,36 @@ class AccessibilityHelper {
     }
 
     static func pressEnter() {
-        // Get WhatsApp's process ID for targeted key events
+        // Use AppleScript to send Enter key - most reliable method
+        let script = """
+        tell application "System Events"
+            tell process "WhatsApp"
+                key code 36
+            end tell
+        end tell
+        """
+
+        var error: NSDictionary?
+        if let appleScript = NSAppleScript(source: script) {
+            appleScript.executeAndReturnError(&error)
+            if let err = error {
+                print("AppleScript error: \(err)")
+                // Fallback to CGEvent
+                fallbackPressEnter()
+            }
+        } else {
+            fallbackPressEnter()
+        }
+    }
+
+    private static func fallbackPressEnter() {
         if let whatsApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "net.whatsapp.WhatsApp" }) {
             let pid = whatsApp.processIdentifier
-
             let source = CGEventSource(stateID: .hidSystemState)
-            let enterKeyCode: CGKeyCode = 36
-
-            let keyDown = CGEvent(keyboardEventSource: source, virtualKey: enterKeyCode, keyDown: true)
-            let keyUp = CGEvent(keyboardEventSource: source, virtualKey: enterKeyCode, keyDown: false)
-
-            // Post to specific process
+            let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true)
+            let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false)
             keyDown?.postToPid(pid)
             keyUp?.postToPid(pid)
-        } else {
-            // Fallback to global post
-            let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: 36, keyDown: true)
-            let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: 36, keyDown: false)
-            keyDown?.post(tap: .cghidEventTap)
-            keyUp?.post(tap: .cghidEventTap)
         }
     }
 
