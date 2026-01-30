@@ -28,6 +28,9 @@ class ResponseGenerator {
             return nil
         }
 
+        // Sanitize input to prevent prompt injection
+        let sanitizedMessage = sanitizeInput(message)
+
         // Get example messages for this contact
         let examples = try dbManager.getMessagesForContact(contactId: contact.id, limit: 50)
 
@@ -51,15 +54,18 @@ class ResponseGenerator {
         let prompt = ollamaClient.buildPrompt(
             contactName: contactName,
             examples: recentPairs.flatMap { [$0.0, $0.1] },
-            newMessage: message,
+            newMessage: sanitizedMessage,
             userName: userName
         )
 
         // Generate response
         let response = try await ollamaClient.generateResponse(prompt: prompt)
 
-        // Clean up response
-        return cleanResponse(response)
+        // Clean up and validate response
+        let cleaned = cleanResponse(response)
+
+        // Don't send empty responses (blocked by security)
+        return cleaned.isEmpty ? nil : cleaned
     }
 
     private func findConversationPairs(messages: [Message]) -> [(Message, Message)] {
@@ -72,6 +78,50 @@ class ResponseGenerator {
         }
 
         return pairs
+    }
+
+    /// Sanitize incoming message to prevent prompt injection
+    private func sanitizeInput(_ message: String) -> String {
+        var sanitized = message
+
+        // Remove common injection patterns
+        let dangerousPatterns = [
+            "ignore all",
+            "ignore previous",
+            "ignore prior",
+            "disregard",
+            "forget everything",
+            "new instructions",
+            "system prompt",
+            "you are now",
+            "act as",
+            "pretend to be",
+            "respond only with",
+            "output only",
+            "```",
+            "\\n\\n",
+            "---",
+            "###",
+        ]
+
+        let lowerMessage = sanitized.lowercased()
+        for pattern in dangerousPatterns {
+            if lowerMessage.contains(pattern) {
+                // Replace suspicious content with [blocked]
+                sanitized = sanitized.replacingOccurrences(
+                    of: pattern,
+                    with: "[...]",
+                    options: .caseInsensitive
+                )
+            }
+        }
+
+        // Limit message length to prevent token stuffing
+        if sanitized.count > 500 {
+            sanitized = String(sanitized.prefix(500))
+        }
+
+        return sanitized
     }
 
     private func cleanResponse(_ response: String) -> String {
@@ -87,6 +137,27 @@ class ResponseGenerator {
 
         // Trim and limit length
         cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Block suspicious response patterns (potential injection success)
+        let suspiciousPatterns = [
+            "system prompt",
+            "my instructions",
+            "I was told to",
+            "I cannot",
+            "As an AI",
+            "I'm an AI",
+            "json",
+            "```",
+            "{",
+            "}",
+        ]
+
+        let lowerCleaned = cleaned.lowercased()
+        for pattern in suspiciousPatterns {
+            if lowerCleaned.contains(pattern.lowercased()) {
+                return "" // Block the response entirely
+            }
+        }
 
         // Limit to reasonable length
         if cleaned.count > 200 {
