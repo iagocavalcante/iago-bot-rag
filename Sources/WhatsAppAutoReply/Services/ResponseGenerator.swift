@@ -25,6 +25,12 @@ class ResponseGenerator {
         return OpenAIClient(apiKey: settings.openAIKey, model: settings.openAIModel)
     }
 
+    /// Create Maritaca client on demand with current settings
+    private func createMaritacaClient() -> MaritacaClient? {
+        guard settings.isMaritacaConfigured else { return nil }
+        return MaritacaClient(apiKey: settings.maritacaKey, model: settings.maritacaModel)
+    }
+
     func generateResponse(for contactName: String, message: String) async throws -> String? {
         // Find contact
         guard let contact = try dbManager.getContactByName(contactName) else {
@@ -159,9 +165,10 @@ class ResponseGenerator {
         // Get or build style profile
         let styleProfile = contact.styleProfile ?? styleAnalyzer.analyzeMessages(examples)
 
-        // Generate response using OpenAI or Ollama
+        // Generate response using selected AI provider
         let response: String
-        if settings.useOpenAI && settings.isOpenAIConfigured {
+        switch settings.aiProvider {
+        case .openai where settings.isOpenAIConfigured:
             print("Using OpenAI with model: \(settings.openAIModel)")
             do {
                 response = try await generateWithOpenAI(
@@ -178,7 +185,27 @@ class ResponseGenerator {
                 print("OpenAI error: \(error)")
                 throw error
             }
-        } else {
+
+        case .maritaca where settings.isMaritacaConfigured:
+            print("Using Maritaca with model: \(settings.maritacaModel)")
+            do {
+                response = try await generateWithMaritaca(
+                    contactName: contactName,
+                    pairs: recentPairs,
+                    message: sanitizedMessage,
+                    styleProfile: styleProfile,
+                    ragContext: ragContext,
+                    ragThreads: ragThreads,
+                    todayContext: todayContext
+                )
+                print("Maritaca response received: \(response.prefix(50))...")
+            } catch {
+                print("Maritaca error: \(error)")
+                throw error
+            }
+
+        default:
+            // Fallback to Ollama (local)
             print("Using Ollama (local)")
             response = try await generateWithOllama(
                 contactName: contactName,
@@ -326,6 +353,75 @@ class ResponseGenerator {
         """
 
         return try await ollamaClient.generateResponse(prompt: prompt)
+    }
+
+    // MARK: - Maritaca Generation
+
+    private func generateWithMaritaca(
+        contactName: String,
+        pairs: [(Message, Message)],
+        message: String,
+        styleProfile: StyleProfile,
+        ragContext: [(contactMessage: String, userResponse: String)]? = nil,
+        ragThreads: [ConversationThread]? = nil,
+        todayContext: String? = nil
+    ) async throws -> String {
+        guard let client = createMaritacaClient() else {
+            throw GeneratorError.maritacaNotConfigured
+        }
+
+        let userName = settings.userName
+
+        // Build enhanced system prompt with style profile
+        // Maritaca/Sabiá excels at Portuguese, so we emphasize that
+        var systemPrompt = buildSystemPrompt(userName: userName, styleProfile: styleProfile)
+        systemPrompt += "\n\nIMPORTANT: You are optimized for Brazilian Portuguese. Be natural and casual."
+
+        // Build user prompt with examples
+        var userPrompt = ""
+
+        // Add today's context first
+        if let today = todayContext {
+            userPrompt += today
+            userPrompt += "\n"
+        }
+
+        // Add conversation threads
+        if let threads = ragThreads, !threads.isEmpty {
+            userPrompt += "=== CONVERSAS SIMILARES DO PASSADO ===\n\n"
+            for (index, thread) in threads.enumerated() {
+                userPrompt += "--- Conversa \(index + 1) ---\n"
+                userPrompt += thread.formatted(contactName: contactName, userName: userName)
+                userPrompt += "\n\n"
+            }
+            userPrompt += "=== FIM DAS CONVERSAS SIMILARES ===\n\n"
+        }
+        else if let rag = ragContext, !rag.isEmpty {
+            userPrompt += "Conversas relevantes similares:\n\n"
+            for (contactMsg, userResp) in rag {
+                userPrompt += "\(contactName): \(contactMsg)\n"
+                userPrompt += "\(userName): \(userResp)\n\n"
+            }
+            userPrompt += "---\n\n"
+        }
+
+        // Add categorized few-shot examples
+        userPrompt += buildFewShotExamples(
+            pairs: pairs,
+            contactName: contactName,
+            userName: userName,
+            styleProfile: styleProfile
+        )
+
+        userPrompt += """
+        ===========================================
+        AGORA RESPONDA
+        ===========================================
+        \(contactName): \(message)
+        \(userName):
+        """
+
+        return try await client.generateResponse(prompt: userPrompt, systemPrompt: systemPrompt)
     }
 
     // MARK: - Prompt Engineering
@@ -570,5 +666,6 @@ class ResponseGenerator {
 
     enum GeneratorError: Error {
         case openAINotConfigured
+        case maritacaNotConfigured
     }
 }

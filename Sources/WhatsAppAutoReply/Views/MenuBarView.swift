@@ -34,12 +34,18 @@ struct MenuBarView: View {
             )
 
             // Show active AI provider
-            if settings.useOpenAI && settings.isOpenAIConfigured {
+            switch settings.aiProvider {
+            case .openai:
                 StatusRow(
                     label: "OpenAI (\(settings.openAIModel))",
-                    isOK: true
+                    isOK: settings.isOpenAIConfigured
                 )
-            } else {
+            case .maritaca:
+                StatusRow(
+                    label: "Maritaca (\(settings.maritacaModel))",
+                    isOK: settings.isMaritacaConfigured
+                )
+            case .ollama:
                 StatusRow(
                     label: "Ollama",
                     isOK: viewModel.isOllamaRunning
@@ -195,21 +201,23 @@ struct SettingsView: View {
 
             Divider()
 
-            // AI Provider toggle
+            // AI Provider selection
             VStack(alignment: .leading, spacing: 8) {
                 Text("AI Provider")
                     .font(.caption)
                     .foregroundColor(.secondary)
 
-                Picker("Provider", selection: $settings.useOpenAI) {
-                    Text("Ollama (Local)").tag(false)
-                    Text("OpenAI (Cloud)").tag(true)
+                Picker("Provider", selection: $settings.aiProvider) {
+                    ForEach(AIProvider.allCases, id: \.self) { provider in
+                        Text(provider.displayName).tag(provider)
+                    }
                 }
                 .pickerStyle(.segmented)
             }
 
-            // OpenAI Settings
-            if settings.useOpenAI {
+            // Provider-specific settings
+            switch settings.aiProvider {
+            case .openai:
                 VStack(alignment: .leading, spacing: 8) {
                     Text("OpenAI API Key")
                         .font(.caption)
@@ -250,7 +258,52 @@ struct SettingsView: View {
                 .padding()
                 .background(Color.blue.opacity(0.05))
                 .cornerRadius(8)
-            } else {
+
+            case .maritaca:
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Maritaca API Key")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    HStack {
+                        if showingAPIKey {
+                            TextField("Key...", text: $settings.maritacaKey)
+                                .textFieldStyle(.roundedBorder)
+                        } else {
+                            SecureField("Key...", text: $settings.maritacaKey)
+                                .textFieldStyle(.roundedBorder)
+                        }
+
+                        Button(showingAPIKey ? "Hide" : "Show") {
+                            showingAPIKey.toggle()
+                        }
+                        .buttonStyle(.link)
+                    }
+
+                    if !settings.isMaritacaConfigured {
+                        Text("Get your API key from plataforma.maritaca.ai")
+                            .font(.caption2)
+                            .foregroundColor(.orange)
+                    }
+
+                    Text("Model")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    Picker("Model", selection: $settings.maritacaModel) {
+                        Text("Sabiá 3 (Best for Portuguese)").tag("sabia-3")
+                        Text("Sabiá 2 Small (Faster)").tag("sabia-2-small")
+                    }
+
+                    Text("Optimized for Brazilian Portuguese")
+                        .font(.caption2)
+                        .foregroundColor(.green)
+                }
+                .padding()
+                .background(Color.green.opacity(0.05))
+                .cornerRadius(8)
+
+            case .ollama:
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Using local Ollama with llama3.2:3b")
                         .font(.caption)
