@@ -188,6 +188,14 @@ class WhatsAppMonitor: ObservableObject {
         var lastIncomingMessage: String?
 
         for (text, _) in allTexts.reversed() {
+            // Skip stickers, images, videos - we can't respond to these meaningfully
+            if text.contains("sticker,") || text.contains("Sticker with:") ||
+               text.contains("image,") || text.contains("video,") ||
+               text.contains("Video from") || text.contains("Image from") ||
+               text.contains("GIF,") || text.contains("Audio,") {
+                continue
+            }
+
             // Skip if not a received message
             guard text.hasPrefix("message, ") && text.contains("Received from ") else { continue }
 
