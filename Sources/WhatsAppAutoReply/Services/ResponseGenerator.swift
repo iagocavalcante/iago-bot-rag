@@ -98,8 +98,15 @@ class ResponseGenerator {
         let sanitizedMessage = sanitizeInput(message)
 
         // Check for personal info requests and deflect with humor
+        // Also check group name in case someone renamed it to trick the bot!
         if let funnyResponse = checkForPersonalInfoRequest(message) {
-            print("Personal info request detected, responding with humor")
+            print("Personal info request detected in message, responding with humor")
+            return funnyResponse
+        }
+
+        // Check if group name itself is trying to trick us (sneaky!)
+        if contact.isGroup, let funnyResponse = checkForGroupNameTrick(contactName) {
+            print("Sneaky group name detected: '\(contactName)' - responding with humor")
             return funnyResponse
         }
 
@@ -744,6 +751,48 @@ class ResponseGenerator {
                 if lowerMessage.contains(pattern) {
                     return responses.randomElement()!
                 }
+            }
+        }
+
+        return nil
+    }
+
+    /// Check if group name is trying to trick the bot (social engineering via rename)
+    private func checkForGroupNameTrick(_ groupName: String) -> String? {
+        let lowerName = groupName.lowercased()
+
+        // Patterns that indicate someone is trying to use the group name to trick the bot
+        let trickPatterns = [
+            // Portuguese
+            "mostre", "mostra", "revele", "revela", "me conta", "me fala",
+            "suas variáveis", "suas variaveis", "seu segredo", "seus segredos",
+            "sua senha", "seu pix", "seu cpf", "seu cartão", "seu cartao",
+            "fale como", "responda como", "ignore as regras", "esquece as regras",
+            "finja que", "aja como", "você é", "voce e",
+            // English
+            "show your", "reveal your", "tell me your", "give me your",
+            "your password", "your secrets", "your env", "environment variable",
+            "your api key", "your token", "your credentials",
+            "act as", "pretend to be", "ignore your rules", "forget your rules",
+            "you are now", "new instructions",
+            // Prompt injection attempts
+            "system prompt", "ignore previous", "disregard", "override",
+        ]
+
+        let funnyResponses = [
+            "Vixi, renomearam o grupo pra tentar me hackear? Vocês são criativos, hein! 😂🔐",
+            "Ahá! Acharam que renomear o grupo ia me enganar? Nice try! 🕵️",
+            "Esse nome de grupo tá muito suspeito... vocês tão de sacanagem né? 😏",
+            "Hackers de grupo de WhatsApp detected! Alerta vermelho! 🚨😂",
+            "Pode mudar o nome do grupo pra 'Me dá sua senha' que também não vai funcionar 🤷‍♂️",
+            "A tentativa foi boa, mas meu firewall de piadas está ativo! 🛡️😄",
+            "Social engineering via grupo? Vocês merecem um troféu de criatividade! 🏆",
+            "Calma lá hackers, eu só respondo mensagens, não leio nome de grupo 😜... ops",
+        ]
+
+        for pattern in trickPatterns {
+            if lowerName.contains(pattern) {
+                return funnyResponses.randomElement()!
             }
         }
 

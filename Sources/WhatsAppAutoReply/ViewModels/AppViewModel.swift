@@ -154,27 +154,30 @@ class AppViewModel: ObservableObject {
         log("Processing message from '\(detected.contactName)'")
 
         // Check if this contact has auto-reply enabled
-        let matchingContact = contacts.first(where: { $0.name == detected.contactName })
+        // Use fuzzy matching to handle group renames
+        let matchingContact = findMatchingContact(detected.contactName)
         if matchingContact == nil {
             log("No contact found matching '\(detected.contactName)'. Available: \(contacts.map { $0.name }.joined(separator: ", "))", isError: true)
             return
         }
         guard matchingContact!.autoReplyEnabled else {
-            log("Auto-reply disabled for '\(detected.contactName)'")
+            log("Auto-reply disabled for '\(matchingContact!.name)'")
             return
         }
 
-        log("Generating response for '\(detected.contactName)'...")
+        // Use the stored contact name for consistency
+        let contactName = matchingContact!.name
+        log("Generating response for '\(contactName)'...")
 
         do {
             if let response = try await responseGenerator.generateResponse(
-                for: detected.contactName,
+                for: contactName,
                 message: detected.content
             ) {
                 log("Generated response: \(response.prefix(50))...")
                 // Set pending response (user has 5 seconds to cancel)
                 pendingResponse = PendingResponse(
-                    contactName: detected.contactName,
+                    contactName: contactName,
                     incomingMessage: detected.content,
                     response: response,
                     timestamp: Date()
@@ -211,6 +214,61 @@ class AppViewModel: ObservableObject {
 
     func cancelPendingResponse() {
         pendingResponse = nil
+    }
+
+    /// Find a matching contact using fuzzy matching
+    /// Handles group renames by checking if names start with or contain stored contact names
+    private func findMatchingContact(_ detectedName: String) -> Contact? {
+        // First try exact match
+        if let exact = contacts.first(where: { $0.name == detectedName }) {
+            return exact
+        }
+
+        // Try prefix match (group renamed to add suffix)
+        // e.g., "Group Name, extra stuff" should match "Group Name"
+        for contact in contacts {
+            if detectedName.hasPrefix(contact.name) {
+                log("Fuzzy match: '\(detectedName)' matched to '\(contact.name)' (prefix)")
+                return contact
+            }
+        }
+
+        // Try if detected name is contained in stored name
+        // e.g., "Group" should match "Group Name"
+        for contact in contacts {
+            if contact.name.hasPrefix(detectedName) {
+                log("Fuzzy match: '\(detectedName)' matched to '\(contact.name)' (stored prefix)")
+                return contact
+            }
+        }
+
+        // Try contains match for groups with emoji variations
+        for contact in contacts where contact.isGroup {
+            // Remove emojis and special chars for comparison
+            let simplifiedDetected = simplifyForComparison(detectedName)
+            let simplifiedContact = simplifyForComparison(contact.name)
+
+            if simplifiedDetected.contains(simplifiedContact) || simplifiedContact.contains(simplifiedDetected) {
+                log("Fuzzy match: '\(detectedName)' matched to '\(contact.name)' (simplified)")
+                return contact
+            }
+        }
+
+        return nil
+    }
+
+    /// Simplify a string for fuzzy comparison
+    private func simplifyForComparison(_ text: String) -> String {
+        // Remove emojis, brackets, and extra punctuation
+        var simplified = text.lowercased()
+        simplified = simplified.replacingOccurrences(of: "[grupo certo]", with: "")
+        simplified = simplified.replacingOccurrences(of: "[", with: "")
+        simplified = simplified.replacingOccurrences(of: "]", with: "")
+        simplified = simplified.components(separatedBy: ",").first ?? simplified
+        // Remove emoji characters
+        simplified = simplified.unicodeScalars.filter { !$0.properties.isEmojiPresentation }.map { String($0) }.joined()
+        simplified = simplified.trimmingCharacters(in: .whitespacesAndNewlines)
+        return simplified
     }
 
     func importChatExport(url: URL) {
