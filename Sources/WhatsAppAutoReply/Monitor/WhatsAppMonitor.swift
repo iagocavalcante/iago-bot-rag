@@ -246,6 +246,29 @@ class WhatsAppMonitor: ObservableObject {
         return mediaPatterns.contains { text.contains($0) }
     }
 
+    /// Check if message contains reply/quote indicators
+    private func isReplyToUser(_ text: String) -> Bool {
+        let lowerText = text.lowercased()
+        let replyIndicators = [
+            // English
+            "replied to your message",
+            "replying to your message",
+            "reply to you",
+            "quoted your message",
+            // Portuguese
+            "respondeu à sua mensagem",
+            "respondeu a sua mensagem",
+            "respondendo à sua mensagem",
+            "citou sua mensagem",
+            "em resposta à sua",
+            // WhatsApp accessibility patterns
+            "reply,",
+            "quoted,",
+        ]
+
+        return replyIndicators.contains { lowerText.contains($0) }
+    }
+
     /// Parse DM format: "message, <content>, <time>, Received from <Name>"
     private func parseDMMessage(_ text: String) -> (String, String)? {
         guard text.hasPrefix("message, ") && text.contains("Received from ") else {

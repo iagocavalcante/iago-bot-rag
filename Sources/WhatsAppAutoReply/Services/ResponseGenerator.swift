@@ -579,14 +579,48 @@ class ResponseGenerator {
             }
         }
 
-        // Check for reply indicator
-        if lowerMessage.contains("replied to your message") ||
-           lowerMessage.contains("respondeu à sua mensagem") {
-            return true
+        // Check for reply indicator (when someone replies to your message)
+        let replyPatterns = [
+            // English patterns
+            "replied to your message",
+            "replying to you",
+            "reply to your",
+            "in reply to you",
+            // Portuguese patterns
+            "respondeu à sua mensagem",
+            "respondeu a sua mensagem",
+            "respondendo a você",
+            "em resposta a você",
+            "resposta para você",
+            // WhatsApp accessibility patterns (may vary)
+            "reply,",  // Sometimes appears in accessibility text
+            "quoted message from you",
+            "citou sua mensagem",
+            "citando você",
+        ]
+
+        for pattern in replyPatterns {
+            if lowerMessage.contains(pattern) {
+                return true
+            }
         }
 
-        // Check for direct questions
-        let questionPatterns = ["iago,", "iago?", "@iago", "e aí iago", "ei iago", "fala iago"]
+        // Check for direct questions with user's name
+        let firstName = userName.split(separator: " ").first?.lowercased() ?? userName.lowercased()
+        let questionPatterns = [
+            "\(firstName),",
+            "\(firstName)?",
+            "@\(firstName)",
+            "e aí \(firstName)",
+            "ei \(firstName)",
+            "fala \(firstName)",
+            "ô \(firstName)",
+            "o \(firstName)",
+            "\(firstName) o que",
+            "\(firstName) oq",
+            "\(firstName) vc",
+            "\(firstName) você",
+        ]
 
         for pattern in questionPatterns {
             if lowerMessage.contains(pattern) {
