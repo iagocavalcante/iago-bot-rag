@@ -7,6 +7,7 @@ class ResponseGenerator {
     private let styleAnalyzer = StyleAnalyzer()
     private let responseDecider = ResponseDecider()
     private let ragManager = RAGManager.shared
+    private let dailyContextTracker = DailyContextTracker.shared
 
     init(
         ollamaClient: OllamaClient = OllamaClient(),
@@ -143,6 +144,18 @@ class ResponseGenerator {
             }
         }
 
+        // Track incoming message and get today's context
+        dailyContextTracker.trackMessage(
+            contactId: contact.id,
+            content: message,
+            isFromUser: false // This is from the contact
+        )
+        let todayContext = dailyContextTracker.getContextSummary(for: contact.id)
+
+        if todayContext != nil {
+            print("Daily context available for: \(contactName)")
+        }
+
         // Get or build style profile
         let styleProfile = contact.styleProfile ?? styleAnalyzer.analyzeMessages(examples)
 
@@ -157,7 +170,8 @@ class ResponseGenerator {
                     message: sanitizedMessage,
                     styleProfile: styleProfile,
                     ragContext: ragContext,
-                    ragThreads: ragThreads
+                    ragThreads: ragThreads,
+                    todayContext: todayContext
                 )
                 print("OpenAI response received: \(response.prefix(50))...")
             } catch {
@@ -172,7 +186,8 @@ class ResponseGenerator {
                 message: sanitizedMessage,
                 styleProfile: styleProfile,
                 ragContext: ragContext,
-                ragThreads: ragThreads
+                ragThreads: ragThreads,
+                todayContext: todayContext
             )
         }
 
@@ -191,7 +206,8 @@ class ResponseGenerator {
         message: String,
         styleProfile: StyleProfile,
         ragContext: [(contactMessage: String, userResponse: String)]? = nil,
-        ragThreads: [ConversationThread]? = nil
+        ragThreads: [ConversationThread]? = nil,
+        todayContext: String? = nil
     ) async throws -> String {
         guard let client = createOpenAIClient() else {
             throw GeneratorError.openAINotConfigured
@@ -205,7 +221,13 @@ class ResponseGenerator {
         // Build user prompt with examples
         var userPrompt = ""
 
-        // Add conversation threads first (richest context with full conversation flow)
+        // Add today's context first (most important for conversation continuity)
+        if let today = todayContext {
+            userPrompt += today
+            userPrompt += "\n"
+        }
+
+        // Add conversation threads (richest context with full conversation flow)
         if let threads = ragThreads, !threads.isEmpty {
             userPrompt += "=== SIMILAR PAST CONVERSATIONS (study the flow and how you responded) ===\n\n"
             for (index, thread) in threads.enumerated() {
@@ -252,7 +274,8 @@ class ResponseGenerator {
         message: String,
         styleProfile: StyleProfile,
         ragContext: [(contactMessage: String, userResponse: String)]? = nil,
-        ragThreads: [ConversationThread]? = nil
+        ragThreads: [ConversationThread]? = nil,
+        todayContext: String? = nil
     ) async throws -> String {
         let userName = settings.userName
 
@@ -260,7 +283,13 @@ class ResponseGenerator {
         var prompt = buildSystemPrompt(userName: userName, styleProfile: styleProfile)
         prompt += "\n\n"
 
-        // Add conversation threads first (richest context)
+        // Add today's context first (most important for conversation continuity)
+        if let today = todayContext {
+            prompt += today
+            prompt += "\n"
+        }
+
+        // Add conversation threads (richest context)
         if let threads = ragThreads, !threads.isEmpty {
             prompt += "=== SIMILAR PAST CONVERSATIONS ===\n\n"
             for (index, thread) in threads.enumerated() {
