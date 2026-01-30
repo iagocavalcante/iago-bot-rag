@@ -183,13 +183,20 @@ class WhatsAppMonitor: ObservableObject {
             if role == "AXHeading" || role == "AXStaticText" {
                 if let headerText = title ?? value ?? desc {
                     let cleaned = cleanText(headerText)
+                    // Skip common UI elements and message content
+                    let skipTexts = ["Chats", "Calls", "Updates", "Archived", "Starred",
+                                     "Settings", "Search", "New Chat", "Ask Meta AI"]
+                    let containsSkip = skipTexts.contains { cleaned == $0 || cleaned.hasPrefix($0) }
+
                     // Skip very long texts (likely message content) and very short texts
-                    if cleaned.count > 1 && cleaned.count < 50 &&
+                    if cleaned.count > 1 && cleaned.count < 50 && !containsSkip &&
                        !cleaned.contains("message") && !cleaned.contains("Message") &&
-                       !cleaned.contains("Received") && !cleaned.contains("Sent") {
-                        // First heading-like element is likely the chat name
+                       !cleaned.contains("Received") && !cleaned.contains("Sent") &&
+                       !cleaned.contains(" from ") && !cleaned.contains(" to ") {
+                        // First valid heading-like element is likely the chat name
                         if chatHeaderName == nil {
                             chatHeaderName = cleaned
+                            debugLog("Found chat header: '\(cleaned)'")
                         }
                     }
                 }
@@ -208,24 +215,97 @@ class WhatsAppMonitor: ObservableObject {
         searchElement(window)
 
         // Look for messages with patterns:
-        // DM format: "message, <content>, <time>, Received from <Name>"
-        // Group format: "message, <content> from <Sender>, <time>, Received in <GroupName>"
+        // Active chat DM: "message, <content>, <time>, Received from <Name>"
+        // Active chat Group: "message, <content> from <Sender>, <time>, Received in <GroupName>"
+        // Sidebar format: "Message from <Name>, <preview>..."
         var senderName: String?
         var groupName: String?
         var lastIncomingMessage: String?
         var isGroupMessage = false
 
+        // First pass: extract group name from ANY "Received in" message (including stickers)
+        for (text, _) in allTexts {
+            if text.contains("Received in ") {
+                if let receivedRange = text.range(of: "Received in ") {
+                    let groupStart = receivedRange.upperBound
+                    var group = String(text[groupStart...]).trimmingCharacters(in: .whitespaces)
+
+                    // Remove WhatsApp status suffixes
+                    let suffixes = [", Pinned", ", Muted", ", Archived", ", Starred"]
+                    for suffix in suffixes {
+                        if group.hasSuffix(suffix) {
+                            group = String(group.dropLast(suffix.count))
+                        }
+                    }
+
+                    if !group.isEmpty && group.count < 50 {
+                        groupName = group
+                        isGroupMessage = true
+                        debugLog("Found group name from any 'Received in': '\(group)'")
+                        break
+                    }
+                }
+            }
+        }
+
+        // Second pass: find actual message content
         for (text, _) in allTexts.reversed() {
             // Skip stickers, images, videos - we can't respond to these meaningfully
             if text.contains("sticker,") || text.contains("Sticker with:") ||
                text.contains("sticker from") ||
                text.contains("image,") || text.contains("video,") ||
                text.contains("Video from") || text.contains("Image from") ||
-               text.contains("GIF,") || text.contains("Audio,") {
+               text.contains("GIF,") || text.contains("Audio,") ||
+               text.contains("Link,") {
                 continue
             }
 
-            // Must be a received message (starts with "message, ")
+            // Skip sent messages
+            if text.hasPrefix("Your message,") || text.contains("Sent to") {
+                continue
+            }
+
+            // Try sidebar format first: "Message from <Name>, <content>"
+            if text.hasPrefix("Message from ") {
+                // Format: "Message from <Name>, <preview>..."
+                let afterPrefix = String(text.dropFirst(13)) // Remove "Message from "
+
+                // Find the first comma to split name and content
+                if let commaIndex = afterPrefix.firstIndex(of: ",") {
+                    var msgSender = String(afterPrefix[..<commaIndex])
+
+                    // Clean up "Maybe " prefix that WhatsApp adds for unsaved contacts
+                    if msgSender.hasPrefix("Maybe ") {
+                        msgSender = String(msgSender.dropFirst(6))
+                    }
+
+                    let content = String(afterPrefix[afterPrefix.index(after: commaIndex)...])
+                        .trimmingCharacters(in: .whitespaces)
+
+                    if !msgSender.isEmpty && !content.isEmpty {
+                        // If we already detected a group from first pass, use group name
+                        if isGroupMessage, let group = groupName {
+                            debugLog("Group sidebar (from first pass): group='\(group)', sender='\(msgSender)', msg='\(content.prefix(30))...'")
+                        }
+                        // If we have a chat header that differs from sender, it's likely a group
+                        else if let header = chatHeaderName, header != msgSender {
+                            if groupName == nil {
+                                groupName = header
+                            }
+                            isGroupMessage = true
+                            debugLog("Group sidebar: header='\(header)', sender='\(msgSender)', msg='\(content.prefix(30))...'")
+                        } else {
+                            senderName = msgSender
+                            debugLog("DM sidebar from '\(msgSender)': '\(content.prefix(30))...'")
+                        }
+                        lastIncomingMessage = content
+                        break
+                    }
+                }
+                continue
+            }
+
+            // Active chat format: must start with "message, "
             guard text.hasPrefix("message, ") else { continue }
 
             // Check if it's a group message with "Received in"
