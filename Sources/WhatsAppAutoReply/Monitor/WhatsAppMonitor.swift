@@ -68,30 +68,35 @@ class WhatsAppMonitor: ObservableObject {
         }
         whatsAppRunning = true
 
-        // Find the active chat name and last message
-        if let (contactName, lastMessage) = findLastMessage(in: window) {
-            let messageHash = lastMessage.hashValue
+        // Find ALL visible messages (not just one)
+        let messages = findAllMessages(in: window)
+
+        if messages.isEmpty {
+            // Log parse failures at most once per minute
+            if Date().timeIntervalSince(lastParseFailureLog) > 60 {
+                lastParseFailureLog = Date()
+                debugLog("No messages found in WhatsApp")
+            }
+            return
+        }
+
+        // Check each message for new content
+        for (contactName, messageContent) in messages {
+            let messageHash = messageContent.hashValue
             let previousHash = lastMessageHashes[contactName] ?? 0
 
             if messageHash != previousHash {
                 lastMessageHashes[contactName] = messageHash
-                debugLog("NEW MESSAGE from '\(contactName)': '\(lastMessage.prefix(40))...'")
+                debugLog("NEW MESSAGE from '\(contactName)': '\(messageContent.prefix(40))...'")
 
                 let detected = DetectedMessage(
                     contactName: contactName,
-                    content: lastMessage,
+                    content: messageContent,
                     timestamp: Date()
                 )
 
                 lastDetectedMessage = detected
                 onNewMessage?(detected)
-            }
-            // Silent on repeat detections - don't spam logs
-        } else {
-            // Log parse failures at most once per minute
-            if Date().timeIntervalSince(lastParseFailureLog) > 60 {
-                lastParseFailureLog = Date()
-                debugLog("Could not parse active chat")
             }
         }
     }
@@ -156,9 +161,10 @@ class WhatsAppMonitor: ObservableObject {
         return cleaned.trimmingCharacters(in: .whitespaces)
     }
 
-    // MARK: - Simplified Message Detection
+    // MARK: - Message Detection
 
-    private func findLastMessage(in window: AXUIElement) -> (contactName: String, message: String)? {
+    /// Find ALL visible messages from WhatsApp (sidebar + active chat)
+    private func findAllMessages(in window: AXUIElement) -> [(contactName: String, message: String)] {
         // Collect all text elements from the WhatsApp window
         var allTexts: [String] = []
 
@@ -182,9 +188,11 @@ class WhatsAppMonitor: ObservableObject {
 
         collectTexts(window)
 
-        // First pass: Look for active chat messages (DM or Group patterns)
-        // These are more reliable than sidebar messages
-        for text in allTexts.reversed() {
+        var results: [(String, String)] = []
+        var seenContacts: Set<String> = [] // Avoid duplicates per contact
+
+        // Parse all texts for messages
+        for text in allTexts {
             // Skip media messages
             if isMediaMessage(text) {
                 continue
@@ -196,38 +204,39 @@ class WhatsAppMonitor: ObservableObject {
                 continue
             }
 
+            // Try all patterns
+            var parsed: (String, String)?
+
             // Pattern 1: DM - "message, <content>, <time>, Received from <Name>"
-            if let result = parseDMMessage(text) {
-                return result
+            if parsed == nil {
+                parsed = parseDMMessage(text)
             }
 
             // Pattern 2: Group - "message, <content> from <Sender>, <time>, Received in <Group>"
-            if let result = parseGroupMessage(text) {
-                return result
-            }
-        }
-
-        // Second pass: Fallback to sidebar messages only if no active chat message found
-        for text in allTexts.reversed() {
-            if isMediaMessage(text) {
-                continue
-            }
-
-            if text.hasPrefix("Your message") || text.hasPrefix("Your photo") ||
-               text.hasPrefix("Your sticker") || text.contains("Sent to") {
-                continue
+            if parsed == nil {
+                parsed = parseGroupMessage(text)
             }
 
             // Pattern 3: Sidebar - "Message from <Name>, <content>"
-            if let result = parseSidebarMessage(text) {
-                return result
+            if parsed == nil {
+                parsed = parseSidebarMessage(text)
+            }
+
+            // Add to results if parsed and not already seen
+            if let (contact, message) = parsed {
+                if !seenContacts.contains(contact) {
+                    seenContacts.insert(contact)
+                    results.append((contact, message))
+                }
             }
         }
 
-        // Debug: show sample of what we found
-        let sample = allTexts.prefix(5).map { String($0.prefix(40)) }.joined(separator: " | ")
-        debugLog("No message matched. Texts: \(sample)")
-        return nil
+        return results
+    }
+
+    /// Legacy single-message function (for compatibility)
+    private func findLastMessage(in window: AXUIElement) -> (contactName: String, message: String)? {
+        return findAllMessages(in: window).first
     }
 
     private func isMediaMessage(_ text: String) -> Bool {
