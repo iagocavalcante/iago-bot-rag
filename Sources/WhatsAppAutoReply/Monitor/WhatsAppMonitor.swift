@@ -245,18 +245,33 @@ class WhatsAppMonitor: ObservableObject {
     }
 
     func sendMessage(_ text: String) {
-        guard let window = AccessibilityHelper.findWhatsAppWindow() else { return }
+        debugLog("Attempting to send message: '\(text.prefix(30))...'")
+
+        guard let window = AccessibilityHelper.findWhatsAppWindow() else {
+            debugLog("ERROR: WhatsApp window not found for sending")
+            return
+        }
 
         // Find the text input field
-        func findInputField(_ element: AXUIElement) -> AXUIElement? {
-            let role = AccessibilityHelper.getRole(element)
+        func findInputField(_ element: AXUIElement, depth: Int = 0) -> AXUIElement? {
+            guard depth < 15 else { return nil }
 
+            let role = AccessibilityHelper.getRole(element)
+            let desc = AccessibilityHelper.getDescription(element)
+
+            // WhatsApp input field might be AXTextArea, AXTextField, or have specific description
             if role == "AXTextArea" || role == "AXTextField" {
+                debugLog("Found input field: \(role ?? "?") desc: \(desc ?? "none")")
                 return element
             }
 
+            // Also check for contenteditable areas
+            if role == "AXWebArea" || role == "AXGroup" {
+                // Check children
+            }
+
             for child in AccessibilityHelper.getChildren(element) {
-                if let found = findInputField(child) {
+                if let found = findInputField(child, depth: depth + 1) {
                     return found
                 }
             }
@@ -264,17 +279,21 @@ class WhatsAppMonitor: ObservableObject {
         }
 
         guard let inputField = findInputField(window) else {
-            print("Could not find input field")
+            debugLog("ERROR: Could not find input field in WhatsApp")
             return
         }
 
-        // Focus and type
+        debugLog("Focusing input field...")
         AccessibilityHelper.setFocus(inputField)
-        Thread.sleep(forTimeInterval: 0.1)
+        Thread.sleep(forTimeInterval: 0.2)
 
+        debugLog("Typing message...")
         AccessibilityHelper.typeText(text)
-        Thread.sleep(forTimeInterval: 0.1)
+        Thread.sleep(forTimeInterval: 0.2)
 
+        debugLog("Pressing Enter...")
         AccessibilityHelper.pressEnter()
+
+        debugLog("Message send attempted")
     }
 }
