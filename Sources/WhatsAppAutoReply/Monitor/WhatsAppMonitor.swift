@@ -264,12 +264,19 @@ class WhatsAppMonitor: ObservableObject {
         return nil
     }
 
-    func sendMessage(_ text: String) {
+    func sendMessage(_ text: String, to contactName: String? = nil) {
         debugLog("Attempting to send message (background): '\(text.prefix(30))...'")
 
         guard let window = AccessibilityHelper.findWhatsAppWindow() else {
             debugLog("ERROR: WhatsApp window not found for sending")
             return
+        }
+
+        // If contact name provided, select that chat first
+        if let contact = contactName {
+            if !selectChat(contact, in: window) {
+                debugLog("WARNING: Could not select chat for '\(contact)', sending to current chat")
+            }
         }
 
         // Find the text input field
@@ -345,6 +352,53 @@ class WhatsAppMonitor: ObservableObject {
         // Fallback: use clipboard method (requires focus)
         debugLog("Direct value set failed, falling back to clipboard method...")
         fallbackSendWithFocus(text: text, inputField: inputField)
+    }
+
+    /// Select a chat by clicking on the contact in sidebar
+    private func selectChat(_ contactName: String, in window: AXUIElement) -> Bool {
+        debugLog("Selecting chat for '\(contactName)'...")
+
+        // Find the chat cell in sidebar that matches the contact name
+        func findChatCell(_ element: AXUIElement, depth: Int = 0) -> AXUIElement? {
+            guard depth < 20 else { return nil }
+
+            let role = AccessibilityHelper.getRole(element)
+            let value = AccessibilityHelper.getValue(element)
+            let title = AccessibilityHelper.getTitle(element)
+            let desc = AccessibilityHelper.getDescription(element)
+
+            // Check if this element contains the contact name
+            let text = value ?? title ?? desc ?? ""
+
+            // Sidebar chat cells often have "Message from <Name>" pattern
+            // Or just the contact name as title/description
+            if text.contains(contactName) || text.contains("Message from \(contactName)") {
+                // Found matching element - if it's clickable (button/cell), return it
+                if role == "AXButton" || role == "AXCell" || role == "AXStaticText" {
+                    debugLog("Found chat cell: [\(role ?? "?")] '\(text.prefix(40))'")
+                    return element
+                }
+            }
+
+            for child in AccessibilityHelper.getChildren(element) {
+                if let found = findChatCell(child, depth: depth + 1) {
+                    return found
+                }
+            }
+            return nil
+        }
+
+        if let chatCell = findChatCell(window) {
+            debugLog("Clicking on chat cell...")
+            if AccessibilityHelper.clickElement(chatCell) {
+                Thread.sleep(forTimeInterval: 0.5) // Wait for chat to load
+                debugLog("Chat selected successfully")
+                return true
+            }
+        }
+
+        debugLog("Could not find chat cell for '\(contactName)'")
+        return false
     }
 
     private func fallbackSendWithFocus(text: String, inputField: AXUIElement) {

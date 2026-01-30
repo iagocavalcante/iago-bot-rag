@@ -197,7 +197,7 @@ class AppViewModel: ObservableObject {
     func sendPendingResponse() {
         guard let pending = pendingResponse else { return }
 
-        monitor.sendMessage(pending.response)
+        monitor.sendMessage(pending.response, to: pending.contactName)
 
         responseLog.insert(ResponseLogEntry(
             contactName: pending.contactName,
