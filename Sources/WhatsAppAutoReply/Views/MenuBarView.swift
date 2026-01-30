@@ -188,12 +188,15 @@ struct SettingsView: View {
                 Spacer()
                 Button("Done") { dismiss() }
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
             .padding(.bottom, 12)
 
             Divider()
+                .padding(.horizontal, 16)
 
             // Scrollable content
-            ScrollView {
+            ScrollView(.vertical, showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 12) {
                     // User name
                     VStack(alignment: .leading, spacing: 4) {
@@ -214,9 +217,9 @@ struct SettingsView: View {
                             .foregroundColor(.secondary)
 
                         Picker("Provider", selection: $settings.aiProvider) {
-                            ForEach(AIProvider.allCases, id: \.self) { provider in
-                                Text(provider.displayName).tag(provider)
-                            }
+                            Text("Ollama").tag(AIProvider.ollama)
+                            Text("OpenAI").tag(AIProvider.openai)
+                            Text("Maritaca").tag(AIProvider.maritaca)
                         }
                         .pickerStyle(.segmented)
                         .labelsHidden()
@@ -226,24 +229,24 @@ struct SettingsView: View {
                     switch settings.aiProvider {
                     case .openai:
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("OpenAI API Key")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-
                             HStack {
-                                if showingAPIKey {
-                                    TextField("sk-...", text: $settings.openAIKey)
-                                        .textFieldStyle(.roundedBorder)
-                                } else {
-                                    SecureField("sk-...", text: $settings.openAIKey)
-                                        .textFieldStyle(.roundedBorder)
-                                }
-
+                                Text("OpenAI API Key")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Spacer()
                                 Button(showingAPIKey ? "Hide" : "Show") {
                                     showingAPIKey.toggle()
                                 }
                                 .buttonStyle(.link)
-                                .controlSize(.small)
+                                .font(.caption)
+                            }
+
+                            if showingAPIKey {
+                                TextField("sk-...", text: $settings.openAIKey)
+                                    .textFieldStyle(.roundedBorder)
+                            } else {
+                                SecureField("sk-...", text: $settings.openAIKey)
+                                    .textFieldStyle(.roundedBorder)
                             }
 
                             if !settings.isOpenAIConfigured {
@@ -271,24 +274,24 @@ struct SettingsView: View {
 
                     case .maritaca:
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Maritaca API Key")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-
                             HStack {
-                                if showingAPIKey {
-                                    TextField("Key...", text: $settings.maritacaKey)
-                                        .textFieldStyle(.roundedBorder)
-                                } else {
-                                    SecureField("Key...", text: $settings.maritacaKey)
-                                        .textFieldStyle(.roundedBorder)
-                                }
-
+                                Text("Maritaca API Key")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Spacer()
                                 Button(showingAPIKey ? "Hide" : "Show") {
                                     showingAPIKey.toggle()
                                 }
                                 .buttonStyle(.link)
-                                .controlSize(.small)
+                                .font(.caption)
+                            }
+
+                            if showingAPIKey {
+                                TextField("Key...", text: $settings.maritacaKey)
+                                    .textFieldStyle(.roundedBorder)
+                            } else {
+                                SecureField("Key...", text: $settings.maritacaKey)
+                                    .textFieldStyle(.roundedBorder)
                             }
 
                             if !settings.isMaritacaConfigured {
@@ -341,32 +344,25 @@ struct SettingsView: View {
                     // Smart Response toggle
                     VStack(alignment: .leading, spacing: 2) {
                         Toggle("Smart Response", isOn: $settings.smartResponse)
-                            .toggleStyle(.switch)
-                            .controlSize(.small)
 
                         Text("Skip messages that don't need reply")
                             .font(.caption2)
                             .foregroundColor(.secondary)
-                            .padding(.leading, 2)
                     }
 
                     // RAG toggle (only show if OpenAI configured)
                     if settings.isOpenAIConfigured {
                         VStack(alignment: .leading, spacing: 2) {
                             Toggle("Semantic Search (RAG)", isOn: $settings.useRAG)
-                                .toggleStyle(.switch)
-                                .controlSize(.small)
 
                             Text("Find similar past conversations")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
-                                .padding(.leading, 2)
 
                             if settings.useRAG {
                                 Text("Embeddings: \(RAGManager.shared.embeddingCount)")
                                     .font(.caption2)
                                     .foregroundColor(.blue)
-                                    .padding(.leading, 2)
                             }
                         }
 
@@ -374,21 +370,20 @@ struct SettingsView: View {
                         if settings.useRAG {
                             VStack(alignment: .leading, spacing: 2) {
                                 Toggle("Group Topic Participation", isOn: $settings.groupTopicParticipation)
-                                    .toggleStyle(.switch)
-                                    .controlSize(.small)
 
                                 Text("Respond when topic is relevant")
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
-                                    .padding(.leading, 2)
                             }
                         }
                     }
+
+                    Spacer(minLength: 16)
                 }
+                .padding(.horizontal, 16)
             }
         }
-        .padding()
-        .frame(width: 380, height: 520)
+        .frame(width: 340, height: 480)
     }
 }
 
