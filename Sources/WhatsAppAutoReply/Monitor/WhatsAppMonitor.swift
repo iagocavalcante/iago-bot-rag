@@ -56,6 +56,8 @@ class WhatsAppMonitor: ObservableObject {
         timer = nil
     }
 
+    private var lastParseFailureLog: Date = .distantPast
+
     private func checkForNewMessages() {
         guard let window = AccessibilityHelper.findWhatsAppWindow() else {
             if whatsAppRunning {
@@ -73,7 +75,7 @@ class WhatsAppMonitor: ObservableObject {
 
             if messageHash != previousHash {
                 lastMessageHashes[contactName] = messageHash
-                debugLog("NEW from '\(contactName)': '\(lastMessage.prefix(40))...'")
+                debugLog("NEW MESSAGE from '\(contactName)': '\(lastMessage.prefix(40))...'")
 
                 let detected = DetectedMessage(
                     contactName: contactName,
@@ -84,10 +86,13 @@ class WhatsAppMonitor: ObservableObject {
                 lastDetectedMessage = detected
                 onNewMessage?(detected)
             }
-            // Don't log every poll - too noisy
+            // Silent on repeat detections - don't spam logs
         } else {
-            // Only log occasionally when can't parse
-            debugLog("Could not parse active chat")
+            // Log parse failures at most once per minute
+            if Date().timeIntervalSince(lastParseFailureLog) > 60 {
+                lastParseFailureLog = Date()
+                debugLog("Could not parse active chat")
+            }
         }
     }
 
@@ -249,7 +254,7 @@ class WhatsAppMonitor: ObservableObject {
         let afterPrefix = String(text.dropFirst(9)) // Remove "message, "
         guard let content = extractContentBeforeTimestamp(afterPrefix) else { return nil }
 
-        debugLog("DM: '\(contactName)' -> '\(content.prefix(30))...'")
+        // Don't log here - log only when it's actually a new message in checkForNewMessages
         return (contactName, content)
     }
 
@@ -275,7 +280,7 @@ class WhatsAppMonitor: ObservableObject {
             content = String(content[..<fromRange.lowerBound])
         }
 
-        debugLog("Group: '\(groupName)' -> '\(content.prefix(30))...'")
+        // Don't log here - log only when it's actually a new message
         return (groupName, content)
     }
 
@@ -301,7 +306,7 @@ class WhatsAppMonitor: ObservableObject {
 
         guard !contactName.isEmpty && !content.isEmpty else { return nil }
 
-        debugLog("Sidebar: '\(contactName)' -> '\(content.prefix(30))...'")
+        // Don't log here - log only when it's actually a new message
         return (contactName, content)
     }
 
