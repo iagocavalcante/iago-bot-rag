@@ -166,6 +166,9 @@ class StyleAnalyzer {
                 .components(separatedBy: .whitespaces)
                 .filter { !$0.isEmpty }
 
+            // Skip if not enough words for n-grams
+            guard words.count >= 2 else { continue }
+
             // Extract bigrams and trigrams
             for n in 2...min(4, words.count) {
                 for i in 0...(words.count - n) {
@@ -230,16 +233,24 @@ class StyleAnalyzer {
     }
 
     private func selectSampleResponses(_ messages: [Message], count: Int) -> [String] {
+        guard !messages.isEmpty else { return [] }
+
         // Get varied samples: short, medium, and long responses
         let sorted = messages.sorted { $0.content.count < $1.content.count }
 
         var samples: [String] = []
 
+        // Handle small message counts
+        guard sorted.count >= 3 else {
+            return sorted.map { $0.content }
+        }
+
         // Get some short, some medium, some long
+        let third = max(1, sorted.count / 3)
         let buckets = [
-            sorted.prefix(sorted.count / 3),
-            sorted.dropFirst(sorted.count / 3).prefix(sorted.count / 3),
-            sorted.suffix(sorted.count / 3)
+            sorted.prefix(third),
+            sorted.dropFirst(third).prefix(third),
+            sorted.suffix(third)
         ]
 
         for bucket in buckets {

@@ -2,7 +2,6 @@ import Foundation
 
 class ResponseGenerator {
     private let ollamaClient: OllamaClient
-    private var openAIClient: OpenAIClient?
     private let dbManager: DatabaseManager
     private let settings: SettingsManager
     private let styleAnalyzer = StyleAnalyzer()
@@ -15,20 +14,12 @@ class ResponseGenerator {
         self.ollamaClient = ollamaClient
         self.dbManager = dbManager
         self.settings = settings
-
-        // Initialize OpenAI client if key is available
-        if settings.isOpenAIConfigured {
-            self.openAIClient = OpenAIClient(apiKey: settings.openAIKey, model: settings.openAIModel)
-        }
     }
 
-    /// Refresh OpenAI client when settings change
-    func refreshOpenAIClient() {
-        if settings.isOpenAIConfigured {
-            self.openAIClient = OpenAIClient(apiKey: settings.openAIKey, model: settings.openAIModel)
-        } else {
-            self.openAIClient = nil
-        }
+    /// Create OpenAI client on demand with current settings
+    private func createOpenAIClient() -> OpenAIClient? {
+        guard settings.isOpenAIConfigured else { return nil }
+        return OpenAIClient(apiKey: settings.openAIKey, model: settings.openAIModel)
     }
 
     func generateResponse(for contactName: String, message: String) async throws -> String? {
@@ -81,13 +72,21 @@ class ResponseGenerator {
         // Generate response using OpenAI or Ollama
         let response: String
         if settings.useOpenAI && settings.isOpenAIConfigured {
-            response = try await generateWithOpenAI(
-                contactName: contactName,
-                pairs: recentPairs,
-                message: sanitizedMessage,
-                styleProfile: styleProfile
-            )
+            print("Using OpenAI with model: \(settings.openAIModel)")
+            do {
+                response = try await generateWithOpenAI(
+                    contactName: contactName,
+                    pairs: recentPairs,
+                    message: sanitizedMessage,
+                    styleProfile: styleProfile
+                )
+                print("OpenAI response received: \(response.prefix(50))...")
+            } catch {
+                print("OpenAI error: \(error)")
+                throw error
+            }
         } else {
+            print("Using Ollama (local)")
             response = try await generateWithOllama(
                 contactName: contactName,
                 pairs: recentPairs,
@@ -111,7 +110,7 @@ class ResponseGenerator {
         message: String,
         styleProfile: StyleProfile
     ) async throws -> String {
-        guard let client = openAIClient else {
+        guard let client = createOpenAIClient() else {
             throw GeneratorError.openAINotConfigured
         }
 
