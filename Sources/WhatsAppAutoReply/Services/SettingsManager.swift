@@ -32,6 +32,7 @@ class SettingsManager: ObservableObject {
     private let useRAGKey = "use_rag"
     private let groupTopicParticipationKey = "group_topic_participation"
     private let audioTranscriptionKey = "audio_transcription"
+    private let imageAnalysisKey = "image_analysis"
 
     // Legacy key for migration
     private let useOpenAIKey = "use_openai"
@@ -114,6 +115,13 @@ class SettingsManager: ObservableObject {
         }
     }
 
+    /// Whether to analyze images/stickers using GPT-4 Vision
+    @Published var imageAnalysis: Bool {
+        didSet {
+            defaults.set(imageAnalysis, forKey: imageAnalysisKey)
+        }
+    }
+
     // MARK: - Initialization
 
     init() {
@@ -126,6 +134,7 @@ class SettingsManager: ObservableObject {
         self.useRAG = defaults.bool(forKey: useRAGKey)
         self.groupTopicParticipation = defaults.bool(forKey: groupTopicParticipationKey)
         self.audioTranscription = defaults.bool(forKey: audioTranscriptionKey)
+        self.imageAnalysis = defaults.bool(forKey: imageAnalysisKey)
 
         // Migrate from legacy useOpenAI setting
         if let providerRaw = defaults.string(forKey: aiProviderKey),

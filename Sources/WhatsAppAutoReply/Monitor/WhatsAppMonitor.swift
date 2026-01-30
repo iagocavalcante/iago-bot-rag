@@ -255,6 +255,20 @@ class WhatsAppMonitor: ObservableObject {
         return audioPatterns.contains { text.contains($0) }
     }
 
+    /// Check if this is a sticker message
+    func isStickerMessage(_ text: String) -> Bool {
+        let stickerPatterns = ["sticker", "Sticker", "Figurinha", "figurinha", "🎭"]
+        return stickerPatterns.contains { text.contains($0) }
+    }
+
+    /// Check if this is an image message
+    func isImageMessage(_ text: String) -> Bool {
+        let imagePatterns = ["image,", "Image from", "Photo,", "photo from",
+                            "imagem", "Imagem de", "Foto,", "foto de",
+                            "GIF,", "gif,", "📷", "🖼️"]
+        return imagePatterns.contains { text.contains($0) }
+    }
+
     /// Check if message contains reply/quote indicators
     private func isReplyToUser(_ text: String) -> Bool {
         let lowerText = text.lowercased()

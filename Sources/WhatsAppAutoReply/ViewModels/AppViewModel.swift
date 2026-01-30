@@ -176,9 +176,36 @@ class AppViewModel: ObservableObject {
                 log("Audio transcribed: \(transcription.prefix(50))...")
                 messageContent = "[Áudio transcrito] \(transcription)"
             } else {
-                log("Could not transcribe audio - responding with acknowledgment")
-                // Respond that we received audio but can't process it yet
-                messageContent = "[Mensagem de áudio recebida]"
+                log("Could not transcribe audio - skipping")
+                return // Don't respond if we can't understand the audio
+            }
+        }
+
+        // Check if this is a sticker or image message and try to analyze it
+        if monitor.isStickerMessage(detected.content) || monitor.isImageMessage(detected.content) {
+            let mediaType = monitor.isStickerMessage(detected.content) ? "Sticker" : "Image"
+            log("\(mediaType) detected, attempting analysis...")
+
+            if let funnyResponse = try? await ImageAnalysisService.shared.analyzeRecentImage() {
+                log("\(mediaType) analyzed, sending fun response: \(funnyResponse)")
+                // For stickers/images, send the fun response directly
+                pendingResponse = PendingResponse(
+                    contactName: contactName,
+                    incomingMessage: detected.content,
+                    response: funnyResponse,
+                    timestamp: Date()
+                )
+
+                // Wait 5 seconds then send if not cancelled
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+
+                if pendingResponse != nil {
+                    sendPendingResponse()
+                }
+                return
+            } else {
+                log("Could not analyze \(mediaType) - skipping")
+                return // Don't respond if we can't see the image
             }
         }
 

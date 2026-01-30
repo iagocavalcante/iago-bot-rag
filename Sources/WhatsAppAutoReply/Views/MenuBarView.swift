@@ -375,6 +375,15 @@ struct SettingsView: View {
                                 .foregroundColor(.secondary)
                         }
 
+                        // Image/Sticker analysis (requires OpenAI Vision)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Toggle("Sticker/Image Analysis", isOn: $settings.imageAnalysis)
+
+                            Text("React to stickers with emojis (Vision)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+
                         // Group topic participation (requires RAG)
                         if settings.useRAG {
                             VStack(alignment: .leading, spacing: 2) {
@@ -392,7 +401,7 @@ struct SettingsView: View {
                 .padding(.horizontal, 16)
             }
         }
-        .frame(width: 340, height: 520)
+        .frame(width: 340, height: 560)
     }
 }
 
