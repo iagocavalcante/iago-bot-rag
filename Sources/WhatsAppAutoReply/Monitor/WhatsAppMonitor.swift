@@ -332,11 +332,13 @@ class WhatsAppMonitor: ObservableObject {
                 }
             }
 
-            // Fallback: press Enter via AppleScript (works without focus)
-            debugLog("Send button not found, pressing Enter via AppleScript...")
+            // Fallback: focus input and press Enter via CGEvent to PID
+            debugLog("Send button not found, focusing input and pressing Enter...")
+            AccessibilityHelper.setFocus(inputField)
+            Thread.sleep(forTimeInterval: 0.1)
             AccessibilityHelper.pressEnter()
             Thread.sleep(forTimeInterval: 0.2)
-            debugLog("Message sent via Enter key")
+            debugLog("Message sent via Enter key (no window activation)")
             return
         }
 

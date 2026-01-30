@@ -104,38 +104,25 @@ class AccessibilityHelper {
         }
     }
 
+    /// Press Enter key - posts directly to WhatsApp process (works without focus)
     static func pressEnter() {
-        // Use AppleScript to send Enter key - most reliable method
-        let script = """
-        tell application "System Events"
-            tell process "WhatsApp"
-                key code 36
-            end tell
-        end tell
-        """
-
-        var error: NSDictionary?
-        if let appleScript = NSAppleScript(source: script) {
-            appleScript.executeAndReturnError(&error)
-            if let err = error {
-                print("AppleScript error: \(err)")
-                // Fallback to CGEvent
-                fallbackPressEnter()
-            }
-        } else {
-            fallbackPressEnter()
+        guard let whatsApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "net.whatsapp.WhatsApp" }) else {
+            print("WhatsApp not running")
+            return
         }
-    }
 
-    private static func fallbackPressEnter() {
-        if let whatsApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "net.whatsapp.WhatsApp" }) {
-            let pid = whatsApp.processIdentifier
-            let source = CGEventSource(stateID: .hidSystemState)
-            let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true)
-            let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false)
-            keyDown?.postToPid(pid)
-            keyUp?.postToPid(pid)
-        }
+        let pid = whatsApp.processIdentifier
+
+        // Post CGEvent directly to WhatsApp's PID (works without focus)
+        let source = CGEventSource(stateID: .hidSystemState)
+        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true) // 36 = Return
+        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false)
+
+        keyDown?.postToPid(pid)
+        Thread.sleep(forTimeInterval: 0.05)
+        keyUp?.postToPid(pid)
+
+        print("Enter key posted to WhatsApp PID \(pid)")
     }
 
     /// Copy text to clipboard and paste (more reliable than typing)
