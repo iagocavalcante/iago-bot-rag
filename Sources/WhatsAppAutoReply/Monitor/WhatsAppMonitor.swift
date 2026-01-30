@@ -194,7 +194,16 @@ class WhatsAppMonitor: ObservableObject {
             // Extract contact name from end: "Received from <Name>"
             if let receivedRange = text.range(of: "Received from ") {
                 let nameStart = receivedRange.upperBound
-                let name = String(text[nameStart...]).trimmingCharacters(in: .whitespaces)
+                var name = String(text[nameStart...]).trimmingCharacters(in: .whitespaces)
+
+                // Remove WhatsApp status suffixes like ", Pinned", ", Muted", etc.
+                let suffixes = [", Pinned", ", Muted", ", Archived", ", Starred"]
+                for suffix in suffixes {
+                    if name.hasSuffix(suffix) {
+                        name = String(name.dropLast(suffix.count))
+                    }
+                }
+
                 if !name.isEmpty && name.count < 50 {
                     contactName = name
                 }
