@@ -265,7 +265,7 @@ class WhatsAppMonitor: ObservableObject {
     }
 
     func sendMessage(_ text: String) {
-        debugLog("Attempting to send message: '\(text.prefix(30))...'")
+        debugLog("Attempting to send message (background): '\(text.prefix(30))...'")
 
         guard let window = AccessibilityHelper.findWhatsAppWindow() else {
             debugLog("ERROR: WhatsApp window not found for sending")
@@ -277,21 +277,35 @@ class WhatsAppMonitor: ObservableObject {
             guard depth < 15 else { return nil }
 
             let role = AccessibilityHelper.getRole(element)
-            let desc = AccessibilityHelper.getDescription(element)
 
-            // WhatsApp input field might be AXTextArea, AXTextField, or have specific description
+            // WhatsApp input field might be AXTextArea, AXTextField
             if role == "AXTextArea" || role == "AXTextField" {
-                debugLog("Found input field: \(role ?? "?") desc: \(desc ?? "none")")
                 return element
-            }
-
-            // Also check for contenteditable areas
-            if role == "AXWebArea" || role == "AXGroup" {
-                // Check children
             }
 
             for child in AccessibilityHelper.getChildren(element) {
                 if let found = findInputField(child, depth: depth + 1) {
+                    return found
+                }
+            }
+            return nil
+        }
+
+        // Find send button by looking for button with "Send" description or similar
+        func findSendButton(_ element: AXUIElement, depth: Int = 0) -> AXUIElement? {
+            guard depth < 15 else { return nil }
+
+            let role = AccessibilityHelper.getRole(element)
+            let desc = AccessibilityHelper.getDescription(element)?.lowercased() ?? ""
+            let title = AccessibilityHelper.getTitle(element)?.lowercased() ?? ""
+
+            // Look for send button
+            if role == "AXButton" && (desc.contains("send") || title.contains("send") || desc.contains("enviar")) {
+                return element
+            }
+
+            for child in AccessibilityHelper.getChildren(element) {
+                if let found = findSendButton(child, depth: depth + 1) {
                     return found
                 }
             }
@@ -303,7 +317,36 @@ class WhatsAppMonitor: ObservableObject {
             return
         }
 
-        // Bring WhatsApp to front
+        // Try to set value directly via accessibility (no focus needed)
+        debugLog("Setting text via accessibility...")
+        if AccessibilityHelper.setValue(inputField, value: text) {
+            debugLog("Text set successfully via accessibility")
+            Thread.sleep(forTimeInterval: 0.3)
+
+            // Try to find and click send button
+            if let sendButton = findSendButton(window) {
+                debugLog("Found send button, clicking...")
+                if AccessibilityHelper.clickElement(sendButton) {
+                    debugLog("Message sent via send button (no focus)")
+                    return
+                }
+            }
+
+            // Fallback: press Enter via AppleScript (works without focus)
+            debugLog("Send button not found, pressing Enter via AppleScript...")
+            AccessibilityHelper.pressEnter()
+            Thread.sleep(forTimeInterval: 0.2)
+            debugLog("Message sent via Enter key")
+            return
+        }
+
+        // Fallback: use clipboard method (requires focus)
+        debugLog("Direct value set failed, falling back to clipboard method...")
+        fallbackSendWithFocus(text: text, inputField: inputField)
+    }
+
+    private func fallbackSendWithFocus(text: String, inputField: AXUIElement) {
+        // Bring WhatsApp to front (only as fallback)
         if let whatsApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "net.whatsapp.WhatsApp" }) {
             whatsApp.activate(options: .activateIgnoringOtherApps)
             Thread.sleep(forTimeInterval: 0.3)
@@ -313,18 +356,17 @@ class WhatsAppMonitor: ObservableObject {
         AccessibilityHelper.setFocus(inputField)
         Thread.sleep(forTimeInterval: 0.3)
 
-        // Click on the input field to ensure focus
         AXUIElementPerformAction(inputField, kAXPressAction as CFString)
         Thread.sleep(forTimeInterval: 0.2)
 
         debugLog("Pasting message via clipboard...")
         AccessibilityHelper.pasteText(text)
-        Thread.sleep(forTimeInterval: 0.8) // Longer wait for paste to complete
+        Thread.sleep(forTimeInterval: 0.8)
 
-        debugLog("Pressing Enter to send (via AppleScript)...")
+        debugLog("Pressing Enter to send...")
         AccessibilityHelper.pressEnter()
         Thread.sleep(forTimeInterval: 0.3)
 
-        debugLog("Message send completed")
+        debugLog("Message send completed (with focus)")
     }
 }

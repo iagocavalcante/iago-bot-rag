@@ -76,6 +76,18 @@ class AccessibilityHelper {
         AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, true as CFTypeRef)
     }
 
+    /// Set the value of a text field directly via accessibility (no focus required)
+    static func setValue(_ element: AXUIElement, value: String) -> Bool {
+        let result = AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, value as CFTypeRef)
+        return result == .success
+    }
+
+    /// Click a button element via accessibility action
+    static func clickElement(_ element: AXUIElement) -> Bool {
+        let result = AXUIElementPerformAction(element, kAXPressAction as CFString)
+        return result == .success
+    }
+
     static func typeText(_ text: String) {
         for char in text {
             let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true)
