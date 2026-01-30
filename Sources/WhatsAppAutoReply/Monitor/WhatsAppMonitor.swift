@@ -158,12 +158,17 @@ class WhatsAppMonitor: ObservableObject {
         //   "message, <content>, <time>, Received from <Name>"
         //   "Your message, <content>, <time>, Sent to <Name>"
         //
+        // GROUP messages format:
+        //   "message, <content>, <time>, <SenderName>"
+        //   The group name is usually in the window/chat header
+        //
         // SIDEBAR format (different):
         //   "Message from <Name>, <preview>"
         //
         // We want ACTIVE CHAT messages that have "Received from" at the end
 
         var allTexts: [(text: String, role: String)] = []
+        var chatHeaderName: String? = nil
 
         func searchElement(_ element: AXUIElement, depth: Int = 0) {
             guard depth < 15 else { return }
@@ -171,6 +176,24 @@ class WhatsAppMonitor: ObservableObject {
             let role = AccessibilityHelper.getRole(element) ?? ""
             let value = AccessibilityHelper.getValue(element)
             let title = AccessibilityHelper.getTitle(element)
+            let desc = AccessibilityHelper.getDescription(element)
+
+            // Look for chat header (usually a heading or static text near the top)
+            // This contains the group name or contact name for the active chat
+            if role == "AXHeading" || role == "AXStaticText" {
+                if let headerText = title ?? value ?? desc {
+                    let cleaned = cleanText(headerText)
+                    // Skip very long texts (likely message content) and very short texts
+                    if cleaned.count > 1 && cleaned.count < 50 &&
+                       !cleaned.contains("message") && !cleaned.contains("Message") &&
+                       !cleaned.contains("Received") && !cleaned.contains("Sent") {
+                        // First heading-like element is likely the chat name
+                        if chatHeaderName == nil {
+                            chatHeaderName = cleaned
+                        }
+                    }
+                }
+            }
 
             if let rawText = value ?? title, !rawText.isEmpty {
                 let text = cleanText(rawText)
@@ -184,70 +207,132 @@ class WhatsAppMonitor: ObservableObject {
 
         searchElement(window)
 
-        // Look for messages with "Received from <Name>" pattern (active chat messages)
-        // Format: "message, <content>, <time>, Received from <Name>"
-        var contactName: String?
+        // Look for messages with patterns:
+        // DM format: "message, <content>, <time>, Received from <Name>"
+        // Group format: "message, <content> from <Sender>, <time>, Received in <GroupName>"
+        var senderName: String?
+        var groupName: String?
         var lastIncomingMessage: String?
+        var isGroupMessage = false
 
         for (text, _) in allTexts.reversed() {
             // Skip stickers, images, videos - we can't respond to these meaningfully
             if text.contains("sticker,") || text.contains("Sticker with:") ||
+               text.contains("sticker from") ||
                text.contains("image,") || text.contains("video,") ||
                text.contains("Video from") || text.contains("Image from") ||
                text.contains("GIF,") || text.contains("Audio,") {
                 continue
             }
 
-            // Skip if not a received message
-            guard text.hasPrefix("message, ") && text.contains("Received from ") else { continue }
+            // Must be a received message (starts with "message, ")
+            guard text.hasPrefix("message, ") else { continue }
 
-            // Extract contact name from end: "Received from <Name>"
-            if let receivedRange = text.range(of: "Received from ") {
-                let nameStart = receivedRange.upperBound
-                var name = String(text[nameStart...]).trimmingCharacters(in: .whitespaces)
+            // Check if it's a group message with "Received in"
+            if text.contains("Received in ") {
+                isGroupMessage = true
+                // Group format: "message, <content> from <Sender>, <time>, Received in <GroupName>"
+                if let receivedRange = text.range(of: "Received in ") {
+                    let groupStart = receivedRange.upperBound
+                    var group = String(text[groupStart...]).trimmingCharacters(in: .whitespaces)
 
-                // Remove WhatsApp status suffixes like ", Pinned", ", Muted", etc.
-                let suffixes = [", Pinned", ", Muted", ", Archived", ", Starred"]
-                for suffix in suffixes {
-                    if name.hasSuffix(suffix) {
-                        name = String(name.dropLast(suffix.count))
+                    // Remove WhatsApp status suffixes
+                    let suffixes = [", Pinned", ", Muted", ", Archived", ", Starred"]
+                    for suffix in suffixes {
+                        if group.hasSuffix(suffix) {
+                            group = String(group.dropLast(suffix.count))
+                        }
+                    }
+
+                    if !group.isEmpty && group.count < 50 {
+                        groupName = group
+                        debugLog("Found group name from 'Received in': '\(group)'")
                     }
                 }
 
-                if !name.isEmpty && name.count < 50 {
-                    contactName = name
+                // Extract sender name from "from <Sender>," pattern before timestamp
+                if let fromRange = text.range(of: " from ") {
+                    let afterFrom = String(text[fromRange.upperBound...])
+                    // Sender name ends at the timestamp pattern (like ", 22:26,")
+                    if let commaRange = afterFrom.range(of: #", \d{1,2}:\d{2},"#, options: .regularExpression) {
+                        let sender = String(afterFrom[..<commaRange.lowerBound])
+                        if !sender.isEmpty {
+                            debugLog("Found group sender: '\(sender)'")
+                        }
+                    }
+                }
+            }
+            // Check if it's a direct message with "Received from"
+            else if text.contains("Received from ") {
+                // Direct message format: "message, <content>, <time>, Received from <Name>"
+                if let receivedRange = text.range(of: "Received from ") {
+                    let nameStart = receivedRange.upperBound
+                    var name = String(text[nameStart...]).trimmingCharacters(in: .whitespaces)
+
+                    // Remove WhatsApp status suffixes
+                    let suffixes = [", Pinned", ", Muted", ", Archived", ", Starred"]
+                    for suffix in suffixes {
+                        if name.hasSuffix(suffix) {
+                            name = String(name.dropLast(suffix.count))
+                        }
+                    }
+
+                    if !name.isEmpty && name.count < 50 {
+                        senderName = name
+                    }
                 }
             }
 
             // Extract message content: between "message, " and the timestamp
-            // Format: "message, <content>, HH:MM, Received from..."
             let afterPrefix = String(text.dropFirst(9)) // Remove "message, "
 
             // Find the timestamp pattern (like "20:37," or "13October2024")
-            // The content is everything before the timestamp
+            var extractedContent: String?
             if let timeRange = afterPrefix.range(of: #", \d{1,2}:\d{2},"#, options: .regularExpression) {
-                let content = String(afterPrefix[..<timeRange.lowerBound])
-                if !content.isEmpty {
-                    lastIncomingMessage = content
-                }
+                extractedContent = String(afterPrefix[..<timeRange.lowerBound])
             } else if let timeRange = afterPrefix.range(of: #", \d{1,2}\D+\d{4}"#, options: .regularExpression) {
-                // Alternative date format like "13October2024"
-                let content = String(afterPrefix[..<timeRange.lowerBound])
-                if !content.isEmpty {
-                    lastIncomingMessage = content
-                }
+                extractedContent = String(afterPrefix[..<timeRange.lowerBound])
             } else {
                 // Fallback: take content before first comma-space-digit pattern
                 let parts = afterPrefix.components(separatedBy: ", ")
                 if parts.count > 1 {
-                    lastIncomingMessage = parts[0]
+                    extractedContent = parts[0]
                 }
             }
 
-            // Found what we need
-            if contactName != nil && lastIncomingMessage != nil {
+            // For group messages, clean up " from <Sender>" suffix from content
+            if var content = extractedContent {
+                if isGroupMessage, let fromRange = content.range(of: #" from [^,]+$"#, options: .regularExpression) {
+                    content = String(content[..<fromRange.lowerBound])
+                }
+                if !content.isEmpty {
+                    lastIncomingMessage = content
+                }
+            }
+
+            // Found a message
+            if lastIncomingMessage != nil {
                 break
             }
+        }
+
+        // Determine the contact name to use
+        // For groups, use the extracted group name or chat header. For DMs, use the sender name.
+        let contactName: String?
+        if isGroupMessage {
+            // Prefer the group name from "Received in" parsing, fallback to chat header
+            if let group = groupName {
+                contactName = group
+                debugLog("Group message detected from 'Received in': '\(group)'")
+            } else if let header = chatHeaderName {
+                contactName = header
+                debugLog("Group message detected, using chat header: '\(header)'")
+            } else {
+                contactName = nil
+                debugLog("Group message detected but no group name found")
+            }
+        } else {
+            contactName = senderName
         }
 
         // Debug output
