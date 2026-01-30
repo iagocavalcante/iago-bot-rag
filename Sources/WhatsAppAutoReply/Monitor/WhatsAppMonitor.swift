@@ -223,20 +223,9 @@ class WhatsAppMonitor: ObservableObject {
         var lastIncomingMessage: String?
         var isGroupMessage = false
 
-        // First: check if chat header looks like a group name (use it as primary source)
-        // The header is more reliable than "Received in" which might be from a different chat
-        if let header = chatHeaderName {
-            // If header has group indicators or doesn't look like a person name, it's likely a group
-            // Group names often have: brackets [], emojis, multiple words with special chars
-            let groupIndicators = header.contains("[") || header.contains("]") ||
-                                  header.contains("👥") || header.contains("🦹") ||
-                                  header.count > 25
-            if groupIndicators {
-                groupName = header
-                isGroupMessage = true
-                debugLog("Using chat header as group name: '\(header)'")
-            }
-        }
+        // NOTE: Don't pre-set isGroupMessage based on header alone
+        // Let the message parsing determine if it's a group (via "Received in" pattern)
+        // The header will be used as fallback for group name if needed
 
         // Fallback: extract group name from "Received in" messages (only if no header group found)
         if groupName == nil {
