@@ -13,6 +13,7 @@ class SettingsManager: ObservableObject {
     private let userNameKey = "user_name"
     private let smartResponseKey = "smart_response"
     private let useRAGKey = "use_rag"
+    private let groupTopicParticipationKey = "group_topic_participation"
 
     /// OpenAI API key (stored in UserDefaults - consider Keychain for production)
     @Published var openAIKey: String {
@@ -56,6 +57,13 @@ class SettingsManager: ObservableObject {
         }
     }
 
+    /// Whether to participate in group chats based on topic relevance (not just mentions)
+    @Published var groupTopicParticipation: Bool {
+        didSet {
+            defaults.set(groupTopicParticipation, forKey: groupTopicParticipationKey)
+        }
+    }
+
     init() {
         self.openAIKey = defaults.string(forKey: openAIKeyKey) ?? ""
         self.useOpenAI = defaults.bool(forKey: useOpenAIKey)
@@ -63,6 +71,7 @@ class SettingsManager: ObservableObject {
         self.userName = defaults.string(forKey: userNameKey) ?? "Iago Cavalcante"
         self.smartResponse = defaults.object(forKey: smartResponseKey) == nil ? true : defaults.bool(forKey: smartResponseKey)
         self.useRAG = defaults.bool(forKey: useRAGKey)
+        self.groupTopicParticipation = defaults.bool(forKey: groupTopicParticipationKey)
     }
 
     /// Check if OpenAI is properly configured

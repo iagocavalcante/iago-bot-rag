@@ -290,6 +290,17 @@ struct SettingsView: View {
                             .foregroundColor(.blue)
                     }
                 }
+
+                // Group topic participation (requires RAG)
+                if settings.useRAG {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Toggle("Group Topic Participation", isOn: $settings.groupTopicParticipation)
+
+                        Text("Respond in groups when the topic is relevant to you, not just when @mentioned.")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
             }
 
             Spacer()

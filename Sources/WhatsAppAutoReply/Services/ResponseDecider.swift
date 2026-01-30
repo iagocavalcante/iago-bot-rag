@@ -3,9 +3,80 @@ import Foundation
 /// Decides whether a message warrants an auto-reply
 class ResponseDecider {
     private let settings: SettingsManager
+    private let groupContextAnalyzer = GroupContextAnalyzer.shared
 
     init(settings: SettingsManager = .shared) {
         self.settings = settings
+    }
+
+    // MARK: - Group Topic-Based Participation
+
+    /// Check if we should participate in a group conversation based on topic relevance
+    /// This is separate from mention detection - it analyzes the conversation topic
+    func shouldParticipateInGroup(
+        groupName: String,
+        message: String,
+        sender: String,
+        contactId: Int64,
+        recentMessages: [Message] = []
+    ) async -> GroupParticipationDecision {
+        // Add message to group context tracker
+        groupContextAnalyzer.addMessage(
+            groupName: groupName,
+            sender: sender,
+            content: message
+        )
+
+        // Check if it's a general question that user might answer
+        if groupContextAnalyzer.isAnswerableQuestion(message) {
+            // Check if topic is relevant to user
+            let (participate, reason, score) = await groupContextAnalyzer.shouldParticipate(
+                in: groupName,
+                contactId: contactId,
+                currentMessage: message
+            )
+
+            if participate {
+                return .participate(
+                    reason: "Answerable question on relevant topic: \(reason)",
+                    confidence: score > 0.6 ? .high : .medium
+                )
+            }
+        }
+
+        // Check topic relevance for general participation
+        let (participate, reason, score) = await groupContextAnalyzer.shouldParticipate(
+            in: groupName,
+            contactId: contactId,
+            currentMessage: message
+        )
+
+        if participate && score > 0.55 {
+            // Higher threshold for non-question messages
+            return .participate(
+                reason: "Topic highly relevant: \(reason)",
+                confidence: score > 0.7 ? .high : .medium
+            )
+        }
+
+        // Check if user typically responds to this pattern
+        if groupContextAnalyzer.matchesResponsePattern(message: message, userMessages: recentMessages) {
+            return .participate(
+                reason: "Matches historical response pattern",
+                confidence: .low
+            )
+        }
+
+        return .skip(reason: reason.isEmpty ? "Topic not relevant to user" : reason)
+    }
+
+    /// Track a message in group context (call for all group messages, not just triggers)
+    func trackGroupMessage(groupName: String, sender: String, content: String) {
+        groupContextAnalyzer.addMessage(
+            groupName: groupName,
+            sender: sender,
+            content: content
+        )
     }
 
     /// Analyze a message and decide if we should respond
@@ -315,4 +386,32 @@ enum Confidence {
     case high    // Definitely should respond
     case medium  // Probably should respond
     case low     // Maybe should respond
+}
+
+// MARK: - Group Participation
+
+enum GroupParticipationDecision {
+    case participate(reason: String, confidence: Confidence)
+    case skip(reason: String)
+
+    var shouldParticipate: Bool {
+        switch self {
+        case .participate: return true
+        case .skip: return false
+        }
+    }
+
+    var reason: String {
+        switch self {
+        case .participate(let reason, _): return reason
+        case .skip(let reason): return reason
+        }
+    }
+
+    var confidence: Confidence? {
+        switch self {
+        case .participate(_, let confidence): return confidence
+        case .skip: return nil
+        }
+    }
 }

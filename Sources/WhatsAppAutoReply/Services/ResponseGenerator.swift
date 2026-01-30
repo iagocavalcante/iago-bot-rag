@@ -37,13 +37,34 @@ class ResponseGenerator {
             return nil
         }
 
-        // For groups, only respond if mentioned
+        // For groups, check mentions OR topic relevance (if enabled)
         if contact.isGroup {
-            if !isMentioned(in: message) {
-                print("Group message but not mentioned, skipping: \(contactName)")
+            let mentioned = isMentioned(in: message)
+
+            if mentioned {
+                print("Mentioned in group, will respond: \(contactName)")
+            } else if settings.groupTopicParticipation && settings.useRAG && settings.isOpenAIConfigured {
+                // Check topic-based participation (requires RAG for semantic matching)
+                let recentMessages = try dbManager.getMessagesForContact(contactId: contact.id, limit: 50)
+                let groupDecision = await responseDecider.shouldParticipateInGroup(
+                    groupName: contactName,
+                    message: message,
+                    sender: "unknown", // We don't have sender info here
+                    contactId: contact.id,
+                    recentMessages: recentMessages
+                )
+
+                if groupDecision.shouldParticipate {
+                    print("Group topic relevant, will participate: \(contactName) - \(groupDecision.reason)")
+                } else {
+                    print("Group message - not mentioned and topic not relevant: \(contactName) - \(groupDecision.reason)")
+                    return nil
+                }
+            } else {
+                // Topic participation disabled, only respond to mentions
+                print("Group message but not mentioned (topic participation disabled): \(contactName)")
                 return nil
             }
-            print("Mentioned in group, will respond: \(contactName)")
         }
 
         // Use smart decision logic if enabled
