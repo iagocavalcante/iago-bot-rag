@@ -180,186 +180,215 @@ struct SettingsView: View {
     @State private var showingAPIKey = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 0) {
+            // Fixed header
             HStack {
                 Text("Settings")
                     .font(.headline)
                 Spacer()
                 Button("Done") { dismiss() }
             }
+            .padding(.bottom, 12)
 
             Divider()
 
-            // User name
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Your Name")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                TextField("Name", text: $settings.userName)
-                    .textFieldStyle(.roundedBorder)
-            }
-
-            Divider()
-
-            // AI Provider selection
-            VStack(alignment: .leading, spacing: 8) {
-                Text("AI Provider")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                Picker("Provider", selection: $settings.aiProvider) {
-                    ForEach(AIProvider.allCases, id: \.self) { provider in
-                        Text(provider.displayName).tag(provider)
-                    }
-                }
-                .pickerStyle(.segmented)
-            }
-
-            // Provider-specific settings
-            switch settings.aiProvider {
-            case .openai:
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("OpenAI API Key")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    HStack {
-                        if showingAPIKey {
-                            TextField("sk-...", text: $settings.openAIKey)
-                                .textFieldStyle(.roundedBorder)
-                        } else {
-                            SecureField("sk-...", text: $settings.openAIKey)
-                                .textFieldStyle(.roundedBorder)
-                        }
-
-                        Button(showingAPIKey ? "Hide" : "Show") {
-                            showingAPIKey.toggle()
-                        }
-                        .buttonStyle(.link)
-                    }
-
-                    if !settings.isOpenAIConfigured {
-                        Text("Enter your API key from platform.openai.com")
-                            .font(.caption2)
-                            .foregroundColor(.orange)
-                    }
-
-                    Text("Model")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    Picker("Model", selection: $settings.openAIModel) {
-                        Text("GPT-4o Mini (Recommended)").tag("gpt-4o-mini")
-                        Text("GPT-4o (Best)").tag("gpt-4o")
-                        Text("GPT-4 Turbo").tag("gpt-4-turbo")
-                        Text("GPT-3.5 Turbo (Cheapest)").tag("gpt-3.5-turbo")
-                    }
-                }
-                .padding()
-                .background(Color.blue.opacity(0.05))
-                .cornerRadius(8)
-
-            case .maritaca:
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Maritaca API Key")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    HStack {
-                        if showingAPIKey {
-                            TextField("Key...", text: $settings.maritacaKey)
-                                .textFieldStyle(.roundedBorder)
-                        } else {
-                            SecureField("Key...", text: $settings.maritacaKey)
-                                .textFieldStyle(.roundedBorder)
-                        }
-
-                        Button(showingAPIKey ? "Hide" : "Show") {
-                            showingAPIKey.toggle()
-                        }
-                        .buttonStyle(.link)
-                    }
-
-                    if !settings.isMaritacaConfigured {
-                        Text("Get your API key from plataforma.maritaca.ai")
-                            .font(.caption2)
-                            .foregroundColor(.orange)
-                    }
-
-                    Text("Model")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    Picker("Model", selection: $settings.maritacaModel) {
-                        Text("Sabiá 3 (Best for Portuguese)").tag("sabia-3")
-                        Text("Sabiá 2 Small (Faster)").tag("sabia-2-small")
-                    }
-
-                    Text("Optimized for Brazilian Portuguese")
-                        .font(.caption2)
-                        .foregroundColor(.green)
-                }
-                .padding()
-                .background(Color.green.opacity(0.05))
-                .cornerRadius(8)
-
-            case .ollama:
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Using local Ollama with llama3.2:3b")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Text("Make sure Ollama is running: ollama serve")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-                .padding()
-                .background(Color.gray.opacity(0.1))
-                .cornerRadius(8)
-            }
-
-            Divider()
-
-            // Smart Response toggle
-            VStack(alignment: .leading, spacing: 4) {
-                Toggle("Smart Response", isOn: $settings.smartResponse)
-
-                Text("When enabled, skips messages that don't need a reply (acknowledgments, statements, late night)")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-
-            // RAG toggle (only show if OpenAI configured)
-            if settings.isOpenAIConfigured {
-                VStack(alignment: .leading, spacing: 4) {
-                    Toggle("Semantic Search (RAG)", isOn: $settings.useRAG)
-
-                    Text("Uses AI to find similar past conversations for better context. Requires OpenAI API.")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-
-                    if settings.useRAG {
-                        Text("Embeddings: \(RAGManager.shared.embeddingCount)")
-                            .font(.caption2)
-                            .foregroundColor(.blue)
-                    }
-                }
-
-                // Group topic participation (requires RAG)
-                if settings.useRAG {
+            // Scrollable content
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    // User name
                     VStack(alignment: .leading, spacing: 4) {
-                        Toggle("Group Topic Participation", isOn: $settings.groupTopicParticipation)
+                        Text("Your Name")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        TextField("Name", text: $settings.userName)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    .padding(.top, 8)
 
-                        Text("Respond in groups when the topic is relevant to you, not just when @mentioned.")
+                    Divider()
+
+                    // AI Provider selection
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("AI Provider")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        Picker("Provider", selection: $settings.aiProvider) {
+                            ForEach(AIProvider.allCases, id: \.self) { provider in
+                                Text(provider.displayName).tag(provider)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                    }
+
+                    // Provider-specific settings
+                    switch settings.aiProvider {
+                    case .openai:
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("OpenAI API Key")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+
+                            HStack {
+                                if showingAPIKey {
+                                    TextField("sk-...", text: $settings.openAIKey)
+                                        .textFieldStyle(.roundedBorder)
+                                } else {
+                                    SecureField("sk-...", text: $settings.openAIKey)
+                                        .textFieldStyle(.roundedBorder)
+                                }
+
+                                Button(showingAPIKey ? "Hide" : "Show") {
+                                    showingAPIKey.toggle()
+                                }
+                                .buttonStyle(.link)
+                                .controlSize(.small)
+                            }
+
+                            if !settings.isOpenAIConfigured {
+                                Text("Get key from platform.openai.com")
+                                    .font(.caption2)
+                                    .foregroundColor(.orange)
+                            }
+
+                            Text("Model")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.top, 4)
+
+                            Picker("Model", selection: $settings.openAIModel) {
+                                Text("GPT-4o Mini").tag("gpt-4o-mini")
+                                Text("GPT-4o").tag("gpt-4o")
+                                Text("GPT-4 Turbo").tag("gpt-4-turbo")
+                                Text("GPT-3.5 Turbo").tag("gpt-3.5-turbo")
+                            }
+                            .labelsHidden()
+                        }
+                        .padding(10)
+                        .background(Color.blue.opacity(0.05))
+                        .cornerRadius(8)
+
+                    case .maritaca:
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Maritaca API Key")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+
+                            HStack {
+                                if showingAPIKey {
+                                    TextField("Key...", text: $settings.maritacaKey)
+                                        .textFieldStyle(.roundedBorder)
+                                } else {
+                                    SecureField("Key...", text: $settings.maritacaKey)
+                                        .textFieldStyle(.roundedBorder)
+                                }
+
+                                Button(showingAPIKey ? "Hide" : "Show") {
+                                    showingAPIKey.toggle()
+                                }
+                                .buttonStyle(.link)
+                                .controlSize(.small)
+                            }
+
+                            if !settings.isMaritacaConfigured {
+                                Text("Get key from plataforma.maritaca.ai")
+                                    .font(.caption2)
+                                    .foregroundColor(.orange)
+                            }
+
+                            Text("Model")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.top, 4)
+
+                            Picker("Model", selection: $settings.maritacaModel) {
+                                Text("Sabiá 3").tag("sabia-3")
+                                Text("Sabiá 2 Small").tag("sabia-2-small")
+                            }
+                            .labelsHidden()
+
+                            Text("Optimized for Brazilian Portuguese")
+                                .font(.caption2)
+                                .foregroundColor(.green)
+                        }
+                        .padding(10)
+                        .background(Color.green.opacity(0.05))
+                        .cornerRadius(8)
+
+                    case .ollama:
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Using local Ollama with llama3.2:3b")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text("Make sure Ollama is running: ollama serve")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(10)
+                        .background(Color.gray.opacity(0.1))
+                        .cornerRadius(8)
+                    }
+
+                    Divider()
+
+                    // Behavior Settings Section
+                    Text("Behavior")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.top, 4)
+
+                    // Smart Response toggle
+                    VStack(alignment: .leading, spacing: 2) {
+                        Toggle("Smart Response", isOn: $settings.smartResponse)
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+
+                        Text("Skip messages that don't need reply")
                             .font(.caption2)
                             .foregroundColor(.secondary)
+                            .padding(.leading, 2)
+                    }
+
+                    // RAG toggle (only show if OpenAI configured)
+                    if settings.isOpenAIConfigured {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Toggle("Semantic Search (RAG)", isOn: $settings.useRAG)
+                                .toggleStyle(.switch)
+                                .controlSize(.small)
+
+                            Text("Find similar past conversations")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .padding(.leading, 2)
+
+                            if settings.useRAG {
+                                Text("Embeddings: \(RAGManager.shared.embeddingCount)")
+                                    .font(.caption2)
+                                    .foregroundColor(.blue)
+                                    .padding(.leading, 2)
+                            }
+                        }
+
+                        // Group topic participation (requires RAG)
+                        if settings.useRAG {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Toggle("Group Topic Participation", isOn: $settings.groupTopicParticipation)
+                                    .toggleStyle(.switch)
+                                    .controlSize(.small)
+
+                                Text("Respond when topic is relevant")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                    .padding(.leading, 2)
+                            }
+                        }
                     }
                 }
             }
-
-            Spacer()
         }
         .padding()
-        .frame(width: 350, height: 450)
+        .frame(width: 380, height: 520)
     }
 }
 
