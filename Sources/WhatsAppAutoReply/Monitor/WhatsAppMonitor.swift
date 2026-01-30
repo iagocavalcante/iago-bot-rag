@@ -17,7 +17,7 @@ class WhatsAppMonitor: ObservableObject {
     @Published var debugInfo: String = ""
 
     private var timer: Timer?
-    private var lastMessageHash: Int = 0
+    private var lastMessageHashes: [String: Int] = [:] // Track per contact
 
     var onNewMessage: ((DetectedMessage) -> Void)?
     var onDebugLog: ((String) -> Void)?
@@ -68,12 +68,12 @@ class WhatsAppMonitor: ObservableObject {
 
         // Find the active chat name and last message
         if let (contactName, lastMessage) = findLastMessage(in: window) {
-            debugLog("Found: '\(contactName)' -> '\(lastMessage.prefix(50))...'")
-            let messageHash = "\(contactName):\(lastMessage)".hashValue
+            let messageHash = lastMessage.hashValue
+            let previousHash = lastMessageHashes[contactName] ?? 0
 
-            if messageHash != lastMessageHash {
-                lastMessageHash = messageHash
-                debugLog("NEW message detected from '\(contactName)'")
+            if messageHash != previousHash {
+                lastMessageHashes[contactName] = messageHash
+                debugLog("NEW from '\(contactName)': '\(lastMessage.prefix(40))...'")
 
                 let detected = DetectedMessage(
                     contactName: contactName,
@@ -84,8 +84,10 @@ class WhatsAppMonitor: ObservableObject {
                 lastDetectedMessage = detected
                 onNewMessage?(detected)
             }
+            // Don't log every poll - too noisy
         } else {
-            debugLog("Could not parse contact/message from WhatsApp window")
+            // Only log occasionally when can't parse
+            debugLog("Could not parse active chat")
         }
     }
 
