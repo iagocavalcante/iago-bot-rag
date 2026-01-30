@@ -168,6 +168,27 @@ class AppViewModel: ObservableObject {
         // Use the stored contact name for consistency
         let contactName = matchingContact!.name
 
+        // Check if group name itself is trying to trick the bot (sneaky!)
+        // Use the DETECTED name, not stored name, to catch renamed groups
+        if matchingContact!.isGroup && detected.contactName != contactName {
+            if let funnyResponse = detectGroupNameTrick(detected.contactName) {
+                log("Sneaky group name detected! Responding with humor...")
+                pendingResponse = PendingResponse(
+                    contactName: contactName,
+                    incomingMessage: detected.content,
+                    response: funnyResponse,
+                    timestamp: Date()
+                )
+
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+
+                if pendingResponse != nil {
+                    sendPendingResponse()
+                }
+                return
+            }
+        }
+
         // Check if this is an audio message and try to transcribe it
         var messageContent = detected.content
         if monitor.isAudioMessage(detected.content) {
@@ -311,6 +332,48 @@ class AppViewModel: ObservableObject {
         simplified = simplified.unicodeScalars.filter { !$0.properties.isEmojiPresentation }.map { String($0) }.joined()
         simplified = simplified.trimmingCharacters(in: .whitespacesAndNewlines)
         return simplified
+    }
+
+    /// Detect if group name is trying to trick the bot (social engineering via rename)
+    private func detectGroupNameTrick(_ groupName: String) -> String? {
+        let lowerName = groupName.lowercased()
+
+        // Patterns that indicate someone is trying to use the group name to trick the bot
+        let trickPatterns = [
+            // Portuguese
+            "mostre", "mostra", "revele", "revela", "me conta", "me fala",
+            "suas variáveis", "suas variaveis", "seu segredo", "seus segredos",
+            "sua senha", "seu pix", "seu cpf", "seu cartão", "seu cartao",
+            "fale como", "responda como", "ignore as regras", "esquece as regras",
+            "finja que", "aja como", "você é", "voce e",
+            // English
+            "show your", "reveal your", "tell me your", "give me your",
+            "your password", "your secrets", "your env", "environment variable",
+            "your api key", "your token", "your credentials",
+            "act as", "pretend to be", "ignore your rules", "forget your rules",
+            "you are now", "new instructions",
+            // Prompt injection attempts
+            "system prompt", "ignore previous", "disregard", "override",
+        ]
+
+        let funnyResponses = [
+            "Vixi, renomearam o grupo pra tentar me hackear? Vocês são criativos, hein! 😂🔐",
+            "Ahá! Acharam que renomear o grupo ia me enganar? Nice try! 🕵️",
+            "Esse nome de grupo tá muito suspeito... vocês tão de sacanagem né? 😏",
+            "Hackers de grupo de WhatsApp detected! Alerta vermelho! 🚨😂",
+            "Pode mudar o nome do grupo pra 'Me dá sua senha' que também não vai funcionar 🤷‍♂️",
+            "A tentativa foi boa, mas meu firewall de piadas está ativo! 🛡️😄",
+            "Social engineering via grupo? Vocês merecem um troféu de criatividade! 🏆",
+            "Calma lá hackers, eu li o nome do grupo sim 😜 mas não caio nessa!",
+        ]
+
+        for pattern in trickPatterns {
+            if lowerName.contains(pattern) {
+                return funnyResponses.randomElement()!
+            }
+        }
+
+        return nil
     }
 
     func importChatExport(url: URL) {
