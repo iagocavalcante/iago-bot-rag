@@ -31,6 +31,7 @@ class SettingsManager: ObservableObject {
     private let smartResponseKey = "smart_response"
     private let useRAGKey = "use_rag"
     private let groupTopicParticipationKey = "group_topic_participation"
+    private let audioTranscriptionKey = "audio_transcription"
 
     // Legacy key for migration
     private let useOpenAIKey = "use_openai"
@@ -106,6 +107,13 @@ class SettingsManager: ObservableObject {
         }
     }
 
+    /// Whether to transcribe audio messages using Whisper
+    @Published var audioTranscription: Bool {
+        didSet {
+            defaults.set(audioTranscription, forKey: audioTranscriptionKey)
+        }
+    }
+
     // MARK: - Initialization
 
     init() {
@@ -117,6 +125,7 @@ class SettingsManager: ObservableObject {
         self.smartResponse = defaults.object(forKey: smartResponseKey) == nil ? true : defaults.bool(forKey: smartResponseKey)
         self.useRAG = defaults.bool(forKey: useRAGKey)
         self.groupTopicParticipation = defaults.bool(forKey: groupTopicParticipationKey)
+        self.audioTranscription = defaults.bool(forKey: audioTranscriptionKey)
 
         // Migrate from legacy useOpenAI setting
         if let providerRaw = defaults.string(forKey: aiProviderKey),

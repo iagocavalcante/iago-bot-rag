@@ -366,6 +366,15 @@ struct SettingsView: View {
                             }
                         }
 
+                        // Audio transcription (requires OpenAI for Whisper)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Toggle("Audio Transcription", isOn: $settings.audioTranscription)
+
+                            Text("Transcribe voice messages (Whisper)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+
                         // Group topic participation (requires RAG)
                         if settings.useRAG {
                             VStack(alignment: .leading, spacing: 2) {
@@ -383,7 +392,7 @@ struct SettingsView: View {
                 .padding(.horizontal, 16)
             }
         }
-        .frame(width: 340, height: 480)
+        .frame(width: 340, height: 520)
     }
 }
 

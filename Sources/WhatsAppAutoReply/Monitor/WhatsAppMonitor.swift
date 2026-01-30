@@ -240,10 +240,19 @@ class WhatsAppMonitor: ObservableObject {
     }
 
     private func isMediaMessage(_ text: String) -> Bool {
+        // Note: Audio is handled separately when transcription is enabled
         let mediaPatterns = ["sticker", "Sticker", "image,", "video,", "Video from",
-                            "Image from", "GIF,", "Audio,", "Link,", "Duration:",
+                            "Image from", "GIF,", "Link,", "Duration:",
                             "Photo,", "Document,", "Contact card"]
         return mediaPatterns.contains { text.contains($0) }
+    }
+
+    /// Check if this is an audio/voice message
+    func isAudioMessage(_ text: String) -> Bool {
+        let audioPatterns = ["Audio,", "Voice message", "audio message",
+                            "Áudio,", "Mensagem de voz", "mensagem de áudio",
+                            "PTT,", "🎤"]
+        return audioPatterns.contains { text.contains($0) }
     }
 
     /// Check if message contains reply/quote indicators

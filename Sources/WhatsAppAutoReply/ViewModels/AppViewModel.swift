@@ -167,12 +167,27 @@ class AppViewModel: ObservableObject {
 
         // Use the stored contact name for consistency
         let contactName = matchingContact!.name
+
+        // Check if this is an audio message and try to transcribe it
+        var messageContent = detected.content
+        if monitor.isAudioMessage(detected.content) {
+            log("Audio message detected, attempting transcription...")
+            if let transcription = try? await AudioTranscriptionService.shared.transcribeRecentAudio() {
+                log("Audio transcribed: \(transcription.prefix(50))...")
+                messageContent = "[Áudio transcrito] \(transcription)"
+            } else {
+                log("Could not transcribe audio - responding with acknowledgment")
+                // Respond that we received audio but can't process it yet
+                messageContent = "[Mensagem de áudio recebida]"
+            }
+        }
+
         log("Generating response for '\(contactName)'...")
 
         do {
             if let response = try await responseGenerator.generateResponse(
                 for: contactName,
-                message: detected.content
+                message: messageContent
             ) {
                 log("Generated response: \(response.prefix(50))...")
                 // Set pending response (user has 5 seconds to cancel)
