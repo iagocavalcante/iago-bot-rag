@@ -53,6 +53,15 @@ class StyleAnalyzer {
         // Sample responses
         profile.sampleResponses = selectSampleResponses(userMessages, count: 15)
 
+        // Enhanced patterns v2
+        profile.favoriteEmojis = extractFavoriteEmojis(userMessages)
+        profile.signaturePhrases = extractSignaturePhrases(userMessages)
+        profile.questionPatterns = extractQuestionPatterns(userMessages)
+        profile.englishMixins = extractEnglishMixins(userMessages)
+        profile.bestResponses = selectBestResponses(userMessages, allMessages: messages)
+        profile.emotionalPatterns = extractEmotionalPatterns(userMessages)
+        profile.contextualStarters = extractContextualStarters(messages)
+
         return profile
     }
 
@@ -567,5 +576,291 @@ class StyleAnalyzer {
 
         // Remove duplicates and limit
         return Array(Set(samples)).prefix(count).map { $0 }
+    }
+
+    // MARK: - Enhanced Patterns v2
+
+    /// Extract favorite emojis with frequency
+    private func extractFavoriteEmojis(_ messages: [Message]) -> [String] {
+        var emojiCounts: [String: Int] = [:]
+
+        for message in messages {
+            for scalar in message.content.unicodeScalars {
+                if scalar.properties.isEmoji && scalar.properties.isEmojiPresentation {
+                    let emoji = String(scalar)
+                    emojiCounts[emoji, default: 0] += 1
+                }
+            }
+        }
+
+        return emojiCounts
+            .sorted { $0.value > $1.value }
+            .prefix(15)
+            .map { $0.key }
+    }
+
+    /// Extract unique signature phrases (phrases that appear often and are distinctive)
+    private func extractSignaturePhrases(_ messages: [Message]) -> [String] {
+        var phraseCounts: [String: Int] = [:]
+
+        // Common generic phrases to exclude
+        let genericPhrases = Set([
+            "bom dia", "boa tarde", "boa noite", "tudo bem", "tudo bom",
+            "até mais", "até logo", "obrigado", "obrigada", "de nada"
+        ])
+
+        for message in messages {
+            let words = message.content.lowercased()
+                .components(separatedBy: .whitespaces)
+                .filter { !$0.isEmpty }
+
+            guard words.count >= 2 else { continue }
+
+            // Extract 2-4 word phrases
+            for n in 2...min(4, words.count) {
+                for i in 0...(words.count - n) {
+                    let phrase = words[i..<(i+n)].joined(separator: " ")
+
+                    // Skip if too short, too long, or generic
+                    guard phrase.count > 5 && phrase.count < 35 else { continue }
+                    guard !genericPhrases.contains(phrase) else { continue }
+
+                    phraseCounts[phrase, default: 0] += 1
+                }
+            }
+        }
+
+        // Signature phrases appear multiple times but aren't super common
+        return phraseCounts
+            .filter { $0.value >= 3 && $0.value <= messages.count / 4 }
+            .sorted { $0.value > $1.value }
+            .prefix(15)
+            .map { $0.key }
+    }
+
+    /// Extract how user asks questions
+    private func extractQuestionPatterns(_ messages: [Message]) -> [String] {
+        var patterns: [String: Int] = [:]
+
+        let questionStarters = [
+            "cadê", "cade", "onde", "como assim", "como q", "como que",
+            "oq", "o que", "o q", "qual", "quando", "porque", "por que",
+            "pq", "quem", "será", "sera", "tu", "vc", "você"
+        ]
+
+        for message in messages {
+            let lower = message.content.lowercased()
+
+            // Only process questions
+            guard lower.contains("?") else { continue }
+
+            // Find question starter pattern
+            for starter in questionStarters {
+                if lower.hasPrefix(starter) || lower.contains(" \(starter)") {
+                    // Get first few words as pattern
+                    let words = lower.components(separatedBy: .whitespaces).prefix(4)
+                    let pattern = words.joined(separator: " ")
+                        .trimmingCharacters(in: .punctuationCharacters)
+
+                    if pattern.count > 3 {
+                        patterns[pattern, default: 0] += 1
+                    }
+                    break
+                }
+            }
+        }
+
+        return patterns
+            .filter { $0.value >= 2 }
+            .sorted { $0.value > $1.value }
+            .prefix(10)
+            .map { $0.key }
+    }
+
+    /// Extract English words mixed into Portuguese
+    private func extractEnglishMixins(_ messages: [Message]) -> [String] {
+        let englishWords = Set([
+            "ok", "okay", "nice", "cool", "top", "please", "sorry", "thanks",
+            "yes", "no", "maybe", "really", "actually", "anyway", "whatever",
+            "like", "love", "hate", "want", "need", "think", "know", "feel",
+            "good", "bad", "great", "awesome", "amazing", "perfect", "crazy",
+            "fuck", "shit", "damn", "hell", "omg", "wtf", "lol", "lmao",
+            "bro", "dude", "man", "girl", "boy", "baby", "honey", "dear",
+            "bye", "hi", "hey", "hello", "what", "why", "how", "when",
+            "feedback", "follow", "post", "story", "live", "call", "meet",
+            "bug", "feature", "code", "deploy", "push", "merge", "commit"
+        ])
+
+        var found: [String: Int] = [:]
+
+        for message in messages {
+            let words = message.content.lowercased()
+                .components(separatedBy: .whitespaces)
+                .map { $0.trimmingCharacters(in: .punctuationCharacters) }
+
+            for word in words {
+                if englishWords.contains(word) {
+                    found[word, default: 0] += 1
+                }
+            }
+        }
+
+        return found
+            .filter { $0.value >= 2 }
+            .sorted { $0.value > $1.value }
+            .prefix(15)
+            .map { $0.key }
+    }
+
+    /// Select best quality responses that represent the user's style
+    private func selectBestResponses(_ userMessages: [Message], allMessages: [Message]) -> [String] {
+        // Score each message by how "representative" it is
+        var scoredMessages: [(message: String, score: Double)] = []
+
+        let avgLength = Double(userMessages.reduce(0) { $0 + $1.content.count }) / Double(max(1, userMessages.count))
+
+        for message in userMessages {
+            let content = message.content
+            var score = 0.0
+
+            // Length close to average is good (not too short, not too long)
+            let lengthDiff = abs(Double(content.count) - avgLength) / avgLength
+            score += max(0, 1.0 - lengthDiff)
+
+            // Contains emoji (personality)
+            if containsEmoji(content) { score += 0.3 }
+
+            // Not too short (has substance)
+            if content.count > 15 { score += 0.2 }
+
+            // Contains punctuation variety
+            if content.contains("!") || content.contains("...") { score += 0.1 }
+
+            // Doesn't start with just "sim" or "não"
+            let lower = content.lowercased()
+            if !lower.hasPrefix("sim") && !lower.hasPrefix("não") && !lower.hasPrefix("nao") {
+                score += 0.2
+            }
+
+            // Not a single word
+            if content.components(separatedBy: .whitespaces).count > 2 { score += 0.2 }
+
+            scoredMessages.append((content, score))
+        }
+
+        // Return top scored unique messages
+        return Array(Set(
+            scoredMessages
+                .sorted { $0.score > $1.score }
+                .prefix(20)
+                .map { $0.message }
+        )).prefix(10).map { $0 }
+    }
+
+    /// Extract emotional response patterns
+    private func extractEmotionalPatterns(_ messages: [Message]) -> EmotionalPatterns {
+        var patterns = EmotionalPatterns()
+
+        let happyIndicators = ["kkkk", "kkk", "haha", "😂", "🤣", "😄", "eba", "aeee", "uhu", "yay", "adorei", "amei"]
+        let sadIndicators = ["😢", "😔", "😞", "triste", "sad", "poxa", "putz", "droga", "força", "sinto muito"]
+        let excitedIndicators = ["!!!", "caramba", "nossa", "uau", "wow", "incrível", "demais", "🔥", "🎉", "💪"]
+        let frustratedIndicators = ["aff", "pqp", "puta", "merda", "ódio", "raiva", "saco", "😤", "😠"]
+
+        for message in messages {
+            let lower = message.content.lowercased()
+            let content = message.content
+
+            // Check for happy
+            for indicator in happyIndicators {
+                if lower.contains(indicator) {
+                    patterns.happyPhrases.append(content)
+                    break
+                }
+            }
+
+            // Check for sad/empathy
+            for indicator in sadIndicators {
+                if lower.contains(indicator) {
+                    patterns.sadPhrases.append(content)
+                    break
+                }
+            }
+
+            // Check for excited
+            for indicator in excitedIndicators {
+                if lower.contains(indicator) || content.contains(indicator) {
+                    patterns.excitedPhrases.append(content)
+                    break
+                }
+            }
+
+            // Check for frustrated
+            for indicator in frustratedIndicators {
+                if lower.contains(indicator) || content.contains(indicator) {
+                    patterns.frustratedPhrases.append(content)
+                    break
+                }
+            }
+        }
+
+        // Dedupe and limit
+        patterns.happyPhrases = Array(Set(patterns.happyPhrases)).prefix(8).map { $0 }
+        patterns.sadPhrases = Array(Set(patterns.sadPhrases)).prefix(5).map { $0 }
+        patterns.excitedPhrases = Array(Set(patterns.excitedPhrases)).prefix(5).map { $0 }
+        patterns.frustratedPhrases = Array(Set(patterns.frustratedPhrases)).prefix(5).map { $0 }
+
+        return patterns
+    }
+
+    /// Extract contextual starters (how user starts responses in different contexts)
+    private func extractContextualStarters(_ allMessages: [Message]) -> [String: [String]] {
+        var starters: [String: [String]] = [
+            "greeting": [],
+            "question": [],
+            "news": [],
+            "request": []
+        ]
+
+        for i in 0..<(allMessages.count - 1) {
+            let contact = allMessages[i]
+            let user = allMessages[i + 1]
+
+            guard contact.sender == .contact && user.sender == .user else { continue }
+
+            let contactLower = contact.content.lowercased()
+            let userStart = user.content.components(separatedBy: .whitespaces).prefix(3).joined(separator: " ")
+
+            // Categorize contact message
+            if contactLower.hasPrefix("oi") || contactLower.hasPrefix("olá") ||
+               contactLower.hasPrefix("e aí") || contactLower.hasPrefix("fala") {
+                starters["greeting"]?.append(userStart)
+            } else if contactLower.contains("?") {
+                starters["question"]?.append(userStart)
+            } else if contactLower.contains("!") || contactLower.contains("notícia") ||
+                      contactLower.contains("olha") || contactLower.contains("cara") {
+                starters["news"]?.append(userStart)
+            } else if contactLower.contains("pode") || contactLower.contains("preciso") ||
+                      contactLower.contains("ajuda") {
+                starters["request"]?.append(userStart)
+            }
+        }
+
+        // Count and keep most common
+        var result: [String: [String]] = [:]
+
+        for (context, responses) in starters {
+            var counts: [String: Int] = [:]
+            for r in responses {
+                counts[r.lowercased(), default: 0] += 1
+            }
+
+            result[context] = counts
+                .filter { $0.value >= 2 }
+                .sorted { $0.value > $1.value }
+                .prefix(5)
+                .map { $0.key }
+        }
+
+        return result
     }
 }

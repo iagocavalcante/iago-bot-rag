@@ -1,5 +1,31 @@
 import Foundation
 
+/// Length patterns for different contexts
+struct LengthPatterns: Codable, Equatable {
+    var shortContexts: [String]   // When user writes short (greetings, confirmations)
+    var longContexts: [String]    // When user writes long (explanations, stories)
+
+    init() {
+        shortContexts = ["greeting", "confirmation", "acknowledgment"]
+        longContexts = ["explanation", "story", "question"]
+    }
+}
+
+/// Emotional response patterns
+struct EmotionalPatterns: Codable, Equatable {
+    var happyPhrases: [String]    // How user expresses happiness
+    var sadPhrases: [String]      // How user expresses sadness/empathy
+    var excitedPhrases: [String]  // How user shows excitement
+    var frustratedPhrases: [String] // How user shows frustration
+
+    init() {
+        happyPhrases = []
+        sadPhrases = []
+        excitedPhrases = []
+        frustratedPhrases = []
+    }
+}
+
 /// Style profile extracted from user's message history with a contact
 struct StyleProfile: Codable, Equatable {
     // MARK: - Basic Metrics
@@ -84,6 +110,32 @@ struct StyleProfile: Codable, Equatable {
     /// Words/phrases the user never uses
     var neverUses: [String]
 
+    // MARK: - Enhanced Patterns (v2)
+
+    /// Favorite emojis with usage count
+    var favoriteEmojis: [String]
+
+    /// Signature phrases unique to this user
+    var signaturePhrases: [String]
+
+    /// How user asks questions ("cadê", "onde", "como assim", etc.)
+    var questionPatterns: [String]
+
+    /// Response starters for different contexts
+    var contextualStarters: [String: [String]]
+
+    /// English words mixed into Portuguese
+    var englishMixins: [String]
+
+    /// Best quality sample responses (curated)
+    var bestResponses: [String]
+
+    /// Response length by context (short/medium/long typical situations)
+    var lengthPatterns: LengthPatterns
+
+    /// Emotional response patterns
+    var emotionalPatterns: EmotionalPatterns
+
     init() {
         self.avgResponseLength = 50
         self.emojiFrequency = 0.3
@@ -109,6 +161,15 @@ struct StyleProfile: Codable, Equatable {
         self.greetingResponses = []
         self.sampleResponses = []
         self.neverUses = []
+        // Enhanced patterns v2
+        self.favoriteEmojis = []
+        self.signaturePhrases = []
+        self.questionPatterns = []
+        self.contextualStarters = [:]
+        self.englishMixins = []
+        self.bestResponses = []
+        self.lengthPatterns = LengthPatterns()
+        self.emotionalPatterns = EmotionalPatterns()
     }
 
     /// Generate a detailed style description for the LLM prompt
@@ -217,6 +278,58 @@ struct StyleProfile: Codable, Equatable {
             desc += "=== NEVER SAY ===\n"
             for word in neverUses.prefix(10) {
                 desc += "- \"\(word)\"\n"
+            }
+            desc += "\n"
+        }
+
+        // Enhanced patterns v2
+        if !favoriteEmojis.isEmpty {
+            desc += "FAVORITE EMOJIS: \(favoriteEmojis.prefix(8).joined(separator: " "))\n\n"
+        }
+
+        if !signaturePhrases.isEmpty {
+            desc += "=== YOUR SIGNATURE PHRASES ===\n"
+            desc += "(Use these naturally - they're uniquely YOU)\n"
+            for phrase in signaturePhrases.prefix(10) {
+                desc += "- \"\(phrase)\"\n"
+            }
+            desc += "\n"
+        }
+
+        if !questionPatterns.isEmpty {
+            desc += "HOW YOU ASK QUESTIONS:\n"
+            for pattern in questionPatterns.prefix(5) {
+                desc += "- \"\(pattern)...\"\n"
+            }
+            desc += "\n"
+        }
+
+        if !englishMixins.isEmpty {
+            desc += "ENGLISH WORDS YOU MIX IN: \(englishMixins.prefix(8).joined(separator: ", "))\n\n"
+        }
+
+        // Emotional patterns
+        if !emotionalPatterns.happyPhrases.isEmpty || !emotionalPatterns.excitedPhrases.isEmpty {
+            desc += "WHEN HAPPY/EXCITED:\n"
+            for phrase in (emotionalPatterns.happyPhrases + emotionalPatterns.excitedPhrases).prefix(5) {
+                desc += "- \"\(phrase)\"\n"
+            }
+            desc += "\n"
+        }
+
+        if !emotionalPatterns.sadPhrases.isEmpty {
+            desc += "WHEN SHOWING EMPATHY:\n"
+            for phrase in emotionalPatterns.sadPhrases.prefix(3) {
+                desc += "- \"\(phrase)\"\n"
+            }
+            desc += "\n"
+        }
+
+        // Best quality examples
+        if !bestResponses.isEmpty {
+            desc += "=== YOUR BEST RESPONSES (emulate these) ===\n"
+            for response in bestResponses.prefix(5) {
+                desc += "• \"\(response)\"\n"
             }
             desc += "\n"
         }
