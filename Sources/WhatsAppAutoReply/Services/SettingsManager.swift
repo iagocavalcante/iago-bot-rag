@@ -11,6 +11,7 @@ class SettingsManager: ObservableObject {
     private let useOpenAIKey = "use_openai"
     private let openAIModelKey = "openai_model"
     private let userNameKey = "user_name"
+    private let smartResponseKey = "smart_response"
 
     /// OpenAI API key (stored in UserDefaults - consider Keychain for production)
     @Published var openAIKey: String {
@@ -40,11 +41,19 @@ class SettingsManager: ObservableObject {
         }
     }
 
+    /// Whether to use smart response decision (skip acknowledgments, check time, etc.)
+    @Published var smartResponse: Bool {
+        didSet {
+            defaults.set(smartResponse, forKey: smartResponseKey)
+        }
+    }
+
     init() {
         self.openAIKey = defaults.string(forKey: openAIKeyKey) ?? ""
         self.useOpenAI = defaults.bool(forKey: useOpenAIKey)
         self.openAIModel = defaults.string(forKey: openAIModelKey) ?? "gpt-4o-mini"
         self.userName = defaults.string(forKey: userNameKey) ?? "Iago Cavalcante"
+        self.smartResponse = defaults.object(forKey: smartResponseKey) == nil ? true : defaults.bool(forKey: smartResponseKey)
     }
 
     /// Check if OpenAI is properly configured

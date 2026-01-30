@@ -5,6 +5,7 @@ class ResponseGenerator {
     private let dbManager: DatabaseManager
     private let settings: SettingsManager
     private let styleAnalyzer = StyleAnalyzer()
+    private let responseDecider = ResponseDecider()
 
     init(
         ollamaClient: OllamaClient = OllamaClient(),
@@ -42,6 +43,26 @@ class ResponseGenerator {
                 return nil
             }
             print("Mentioned in group, will respond: \(contactName)")
+        }
+
+        // Use smart decision logic if enabled
+        if settings.smartResponse {
+            let recentMessages = try dbManager.getMessagesForContact(contactId: contact.id, limit: 10)
+
+            let decision = responseDecider.shouldRespond(
+                to: message,
+                from: contactName,
+                contact: contact,
+                recentMessages: recentMessages
+            )
+
+            print("Smart response decision: \(decision.shouldRespond ? "RESPOND" : "SKIP") - \(decision.reason)")
+
+            if !decision.shouldRespond {
+                return nil
+            }
+        } else {
+            print("Smart response disabled, will respond to all messages")
         }
 
         // Sanitize input to prevent prompt injection

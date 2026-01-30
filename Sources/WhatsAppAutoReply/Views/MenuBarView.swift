@@ -264,10 +264,21 @@ struct SettingsView: View {
                 .cornerRadius(8)
             }
 
+            Divider()
+
+            // Smart Response toggle
+            VStack(alignment: .leading, spacing: 4) {
+                Toggle("Smart Response", isOn: $settings.smartResponse)
+
+                Text("When enabled, skips messages that don't need a reply (acknowledgments, statements, late night)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
             Spacer()
         }
         .padding()
-        .frame(width: 350, height: 400)
+        .frame(width: 350, height: 450)
     }
 }
 
