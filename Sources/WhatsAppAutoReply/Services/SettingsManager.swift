@@ -15,6 +15,26 @@ enum AIProvider: String, CaseIterable {
     }
 }
 
+/// Monitoring method options
+enum MonitoringMethod: String, CaseIterable {
+    case accessibility = "accessibility"
+    case database = "database"
+
+    var displayName: String {
+        switch self {
+        case .accessibility: return "Accessibility API"
+        case .database: return "Database (SQLite)"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .accessibility: return "Screen reading via macOS Accessibility"
+        case .database: return "Direct read from WhatsApp database"
+        }
+    }
+}
+
 /// Manages app settings including API keys
 class SettingsManager: ObservableObject {
     static let shared = SettingsManager()
@@ -34,6 +54,7 @@ class SettingsManager: ObservableObject {
     private let audioTranscriptionKey = "audio_transcription"
     private let imageAnalysisKey = "image_analysis"
     private let useReplyModeKey = "use_reply_mode"
+    private let monitoringMethodKey = "monitoring_method"
 
     // Legacy key for migration
     private let useOpenAIKey = "use_openai"
@@ -130,6 +151,13 @@ class SettingsManager: ObservableObject {
         }
     }
 
+    /// Monitoring method: accessibility API or database
+    @Published var monitoringMethod: MonitoringMethod {
+        didSet {
+            defaults.set(monitoringMethod.rawValue, forKey: monitoringMethodKey)
+        }
+    }
+
     // MARK: - Initialization
 
     init() {
@@ -144,6 +172,14 @@ class SettingsManager: ObservableObject {
         self.audioTranscription = defaults.bool(forKey: audioTranscriptionKey)
         self.imageAnalysis = defaults.bool(forKey: imageAnalysisKey)
         self.useReplyMode = defaults.bool(forKey: useReplyModeKey)
+
+        // Monitoring method
+        if let methodRaw = defaults.string(forKey: monitoringMethodKey),
+           let method = MonitoringMethod(rawValue: methodRaw) {
+            self.monitoringMethod = method
+        } else {
+            self.monitoringMethod = .accessibility // Default to accessibility
+        }
 
         // Migrate from legacy useOpenAI setting
         if let providerRaw = defaults.string(forKey: aiProviderKey),

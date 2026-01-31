@@ -53,9 +53,17 @@ struct MenuBarView: View {
             }
 
             StatusRow(
-                label: "Monitoring",
+                label: "Monitoring (\(settings.monitoringMethod == .database ? "DB" : "API"))",
                 isOK: viewModel.isMonitoring
             )
+
+            // Show database status if using database method
+            if settings.monitoringMethod == .database {
+                StatusRow(
+                    label: "Database Access",
+                    isOK: viewModel.isDatabaseAccessible
+                )
+            }
 
             Divider()
 
@@ -357,6 +365,32 @@ struct SettingsView: View {
                         Text("Quote original message (Cmd+R)")
                             .font(.caption2)
                             .foregroundColor(.secondary)
+                    }
+
+                    Divider()
+
+                    // Monitoring Method
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Monitoring Method")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        Picker("Method", selection: $settings.monitoringMethod) {
+                            Text("Accessibility").tag(MonitoringMethod.accessibility)
+                            Text("Database").tag(MonitoringMethod.database)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+
+                        Text(settings.monitoringMethod.description)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+
+                        if settings.monitoringMethod == .database {
+                            Text("⚠️ Restart monitoring after changing")
+                                .font(.caption2)
+                                .foregroundColor(.orange)
+                        }
                     }
 
                     // RAG toggle (only show if OpenAI configured)

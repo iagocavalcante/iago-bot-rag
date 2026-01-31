@@ -36,15 +36,28 @@ class AppViewModel: ObservableObject {
     }
 
     private let dbManager = DatabaseManager.shared
-    private let monitor = WhatsAppMonitor()
+    private let accessibilityMonitor = WhatsAppMonitor()
+    private let databaseMonitor = WhatsAppDatabaseMonitor()
     private let responseGenerator = ResponseGenerator()
     private let ollamaClient = OllamaClient()
 
     private var cancellables = Set<AnyCancellable>()
 
+    /// Currently active monitoring method
+    private var activeMonitoringMethod: MonitoringMethod = .accessibility
+
     /// Track group names we've already responded to with trick detection
     /// This prevents responding multiple times to the same renamed group
-    private var handledTrickNames: Set<String> = []
+    /// Persisted to UserDefaults so it survives app restarts
+    private var handledTrickNames: Set<String> {
+        get {
+            let array = UserDefaults.standard.stringArray(forKey: "handled_trick_names") ?? []
+            return Set(array)
+        }
+        set {
+            UserDefaults.standard.set(Array(newValue), forKey: "handled_trick_names")
+        }
+    }
 
     /// Track when monitoring started to avoid responding to old messages
     private var monitoringStartTime: Date = Date()
@@ -69,11 +82,15 @@ class AppViewModel: ObservableObject {
     }
 
     var hasAccessibilityPermission: Bool {
-        monitor.hasAccessibilityPermission
+        accessibilityMonitor.hasAccessibilityPermission
     }
 
     var isWhatsAppRunning: Bool {
-        monitor.whatsAppRunning
+        accessibilityMonitor.whatsAppRunning
+    }
+
+    var isDatabaseAccessible: Bool {
+        databaseMonitor.isDatabaseAccessible()
     }
 
     init() {
@@ -103,31 +120,56 @@ class AppViewModel: ObservableObject {
     }
 
     var monitorDebugInfo: String {
-        monitor.debugInfo
+        switch activeMonitoringMethod {
+        case .accessibility:
+            return accessibilityMonitor.debugInfo
+        case .database:
+            return databaseMonitor.debugInfo
+        }
     }
 
     var isMonitoring: Bool {
-        monitor.isMonitoring
+        switch activeMonitoringMethod {
+        case .accessibility:
+            return accessibilityMonitor.isMonitoring
+        case .database:
+            return databaseMonitor.isMonitoring
+        }
     }
 
     func setupMonitor() {
-        monitor.onNewMessage = { [weak self] detected in
+        // Setup accessibility monitor callbacks
+        accessibilityMonitor.onNewMessage = { [weak self] detected in
             Task { @MainActor in
                 self?.log("Message detected from '\(detected.contactName)': \(detected.content.prefix(50))...")
                 await self?.handleNewMessage(detected)
             }
         }
 
-        monitor.onDebugLog = { [weak self] msg in
+        accessibilityMonitor.onDebugLog = { [weak self] msg in
             Task { @MainActor in
-                self?.log("[Monitor] \(msg)")
+                self?.log("[AccMonitor] \(msg)")
+            }
+        }
+
+        // Setup database monitor callbacks
+        databaseMonitor.onNewMessage = { [weak self] detected in
+            Task { @MainActor in
+                self?.log("Message detected from '\(detected.contactName)': \(detected.content.prefix(50))...")
+                await self?.handleNewMessage(detected)
+            }
+        }
+
+        databaseMonitor.onDebugLog = { [weak self] msg in
+            Task { @MainActor in
+                self?.log("[DBMonitor] \(msg)")
             }
         }
 
         // Check permissions periodically
         Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                self?.monitor.checkPermissions()
+                self?.accessibilityMonitor.checkPermissions()
                 self?.checkOllama()
             }
         }
@@ -153,16 +195,39 @@ class AppViewModel: ObservableObject {
 
     private func updateMonitoringState() {
         let hasActiveContacts = contacts.contains { $0.autoReplyEnabled }
+        let selectedMethod = SettingsManager.shared.monitoringMethod
 
-        if hasActiveContacts && !monitor.isMonitoring {
+        // Stop the other monitor if method changed
+        if selectedMethod != activeMonitoringMethod {
+            switch activeMonitoringMethod {
+            case .accessibility:
+                accessibilityMonitor.stopMonitoring()
+            case .database:
+                databaseMonitor.stopMonitoring()
+            }
+            activeMonitoringMethod = selectedMethod
+        }
+
+        if hasActiveContacts && !isMonitoring {
             // Reset the monitoring start time when we begin monitoring
             monitoringStartTime = Date()
-            // Clear handled trick names for fresh session
-            handledTrickNames.removeAll()
-            log("Starting monitoring - messages older than 20 min will be ignored")
-            monitor.startMonitoring()
-        } else if !hasActiveContacts && monitor.isMonitoring {
-            monitor.stopMonitoring()
+            // Note: handledTrickNames is now persisted - don't clear it
+            // This ensures we never respond twice to the same trick name
+            log("Starting \(selectedMethod.displayName) monitoring - messages older than 20 min will be ignored (tracking \(handledTrickNames.count) handled trick names)")
+
+            switch selectedMethod {
+            case .accessibility:
+                accessibilityMonitor.startMonitoring()
+            case .database:
+                databaseMonitor.startMonitoring()
+            }
+        } else if !hasActiveContacts && isMonitoring {
+            switch activeMonitoringMethod {
+            case .accessibility:
+                accessibilityMonitor.stopMonitoring()
+            case .database:
+                databaseMonitor.stopMonitoring()
+            }
         }
     }
 
@@ -239,7 +304,7 @@ class AppViewModel: ObservableObject {
 
         // Check if this is an audio message and try to transcribe it
         var messageContent = detected.content
-        if monitor.isAudioMessage(detected.content) {
+        if accessibilityMonitor.isAudioMessage(detected.content) {
             log("Audio message detected, attempting transcription...")
             if let transcription = try? await AudioTranscriptionService.shared.transcribeRecentAudio() {
                 log("Audio transcribed: \(transcription.prefix(50))...")
@@ -251,8 +316,8 @@ class AppViewModel: ObservableObject {
         }
 
         // Check if this is a sticker or image message and try to analyze it
-        if monitor.isStickerMessage(detected.content) || monitor.isImageMessage(detected.content) {
-            let mediaType = monitor.isStickerMessage(detected.content) ? "Sticker" : "Image"
+        if accessibilityMonitor.isStickerMessage(detected.content) || accessibilityMonitor.isImageMessage(detected.content) {
+            let mediaType = accessibilityMonitor.isStickerMessage(detected.content) ? "Sticker" : "Image"
             log("\(mediaType) detected, attempting analysis...")
 
             if let funnyResponse = try? await ImageAnalysisService.shared.analyzeRecentImage() {
@@ -312,11 +377,12 @@ class AppViewModel: ObservableObject {
         guard let pending = pendingResponse else { return }
 
         // Use reply mode if enabled (quotes the original message)
+        // Note: Sending messages always uses the accessibility monitor
         if SettingsManager.shared.useReplyMode {
             log("Sending reply with quote (Reply Mode ON)")
-            monitor.sendReplyMessage(pending.response, to: pending.contactName)
+            accessibilityMonitor.sendReplyMessage(pending.response, to: pending.contactName)
         } else {
-            monitor.sendMessage(pending.response, to: pending.contactName)
+            accessibilityMonitor.sendMessage(pending.response, to: pending.contactName)
         }
 
         responseLog.insert(ResponseLogEntry(
@@ -567,7 +633,7 @@ class AppViewModel: ObservableObject {
     }
 
     func dumpWhatsAppTree() {
-        let tree = monitor.dumpAccessibilityTree()
+        let tree = accessibilityMonitor.dumpAccessibilityTree()
         log("=== WhatsApp Tree Dump ===")
         for line in tree.components(separatedBy: "\n").prefix(30) {
             log(line)
