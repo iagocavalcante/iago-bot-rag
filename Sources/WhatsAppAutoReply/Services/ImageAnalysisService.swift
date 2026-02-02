@@ -7,9 +7,54 @@ class ImageAnalysisService {
     private let settings = SettingsManager.shared
     private var visionClient: VisionClient?
 
+    // MARK: - Security: File Size Limits
+
+    /// Maximum image file size to analyze (10MB)
+    static let maxImageSizeBytes: Int64 = 10 * 1024 * 1024
+
     private init() {}
 
-    /// Analyze the most recent image/sticker and generate a fun response
+    /// Analyze the most recent image/sticker for a specific chat
+    /// Uses database lookup for accurate media identification
+    /// - Parameter chatName: The chat/contact name to find image for
+    /// - Returns: Generated response or nil if no valid image found
+    func analyzeRecentImage(forChat chatName: String) async throws -> String? {
+        guard settings.imageAnalysis && settings.isOpenAIConfigured else {
+            print("[Image] Analysis disabled or OpenAI not configured")
+            return nil
+        }
+
+        // Create vision client if needed
+        if visionClient == nil {
+            // Use gpt-4o-mini for cost efficiency (still has vision)
+            visionClient = VisionClient(apiKey: settings.openAIKey, model: "gpt-4o-mini")
+        }
+
+        // Try database lookup first (more accurate)
+        let dbMonitor = WhatsAppDatabaseMonitor()
+        if let mediaInfo = dbMonitor.getMostRecentImage(forChat: chatName) {
+            // Check file exists and size
+            if let imageURL = mediaInfo.fullPath,
+               FileManager.default.fileExists(atPath: imageURL.path) {
+                print("[Image] Found via database: \(imageURL.lastPathComponent) (type: \(mediaInfo.mediaType.description))")
+
+                // Security: Check file size
+                if mediaInfo.fileSize > Self.maxImageSizeBytes {
+                    print("[Image] File too large: \(mediaInfo.fileSize / 1024 / 1024)MB (max: \(Self.maxImageSizeBytes / 1024 / 1024)MB)")
+                    return nil
+                }
+
+                return try await analyzeImage(at: imageURL)
+            } else {
+                print("[Image] Database path not accessible, falling back to file search")
+            }
+        }
+
+        // Fallback to file system search
+        return try await analyzeRecentImage()
+    }
+
+    /// Analyze the most recent image/sticker (legacy file-based search)
     func analyzeRecentImage() async throws -> String? {
         guard settings.imageAnalysis && settings.isOpenAIConfigured else {
             print("[Image] Analysis disabled or OpenAI not configured")
@@ -30,6 +75,18 @@ class ImageAnalysisService {
 
         print("[Image] Found image: \(imageURL.lastPathComponent)")
 
+        // Security: Check file size
+        if let fileSize = try? FileManager.default.attributesOfItem(atPath: imageURL.path)[.size] as? Int64,
+           fileSize > Self.maxImageSizeBytes {
+            print("[Image] File too large: \(fileSize / 1024 / 1024)MB (max: \(Self.maxImageSizeBytes / 1024 / 1024)MB)")
+            return nil
+        }
+
+        return try await analyzeImage(at: imageURL)
+    }
+
+    /// Analyze a specific image file
+    private func analyzeImage(at imageURL: URL) async throws -> String? {
         do {
             let imageData = try Data(contentsOf: imageURL)
             let analysis = try await visionClient!.analyzeStickerForReaction(imageData: imageData)
