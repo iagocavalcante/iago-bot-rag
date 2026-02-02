@@ -86,15 +86,43 @@ class ResponseDecider {
         contact: Contact,
         recentMessages: [Message] = []
     ) -> ResponseDecision {
+        let isPrivateChat = !contact.isGroup
+
         // Check if it's an appropriate time to respond
         if !isAppropriateTime() {
             return .skip(reason: "Outside normal response hours")
         }
 
         // Check if message is just a reaction/acknowledgment (shouldn't reply)
+        // This applies to both private and group messages
         if isJustAcknowledgment(message) {
             return .skip(reason: "Message is just an acknowledgment")
         }
+
+        // PRIVATE MESSAGES: Almost always respond
+        // For 1:1 conversations, we're much more permissive
+        if isPrivateChat {
+            // Check if it's a direct question - respond with high confidence
+            if isQuestion(message) {
+                return .respond(confidence: .high, reason: "Private chat: question detected")
+            }
+
+            // Check if it's a greeting - respond with high confidence
+            if isGreeting(message) {
+                return .respond(confidence: .high, reason: "Private chat: greeting detected")
+            }
+
+            // Check if it's a request/call to action
+            if isRequest(message) {
+                return .respond(confidence: .high, reason: "Private chat: request detected")
+            }
+
+            // For private chats, even statements deserve a response
+            // Only skip pure acknowledgments (handled above)
+            return .respond(confidence: .medium, reason: "Private chat: always engage in conversation")
+        }
+
+        // GROUP MESSAGES: More selective about when to respond
 
         // Check if it's a direct question - always respond
         if isQuestion(message) {
@@ -124,7 +152,7 @@ class ResponseDecider {
             }
         }
 
-        // Default: statements/comments don't always need a reply
+        // Default: statements/comments don't always need a reply in groups
         if isJustStatement(message) {
             return .skip(reason: "Just a statement, no response needed")
         }
