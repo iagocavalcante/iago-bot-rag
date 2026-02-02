@@ -18,14 +18,15 @@ final class OllamaClientTests: XCTestCase {
         ]
 
         let prompt = client.buildPrompt(
-            contactName: "Amor",
+            contactName: "Contact",
             examples: examples,
-            newMessage: "Tudo bem?"
+            newMessage: "Tudo bem?",
+            userName: "Test User"
         )
 
-        XCTAssertTrue(prompt.contains("Amor: Quer pizza?"))
-        XCTAssertTrue(prompt.contains("Iago Cavalcante: bora"))
-        XCTAssertTrue(prompt.contains("Amor: Tudo bem?"))
+        XCTAssertTrue(prompt.contains("Contact: Quer pizza?"))
+        XCTAssertTrue(prompt.contains("Test User: bora"))
+        XCTAssertTrue(prompt.contains("Contact: Tudo bem?"))
         XCTAssertTrue(prompt.contains("Portuguese"))
     }
 
