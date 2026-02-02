@@ -67,26 +67,30 @@ struct MenuBarView: View {
 
             Divider()
 
-            // Pending response notification
-            if let pending = viewModel.pendingResponse {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Sending in 5s...")
-                        .font(.caption)
-                        .foregroundColor(.orange)
-                    Text(pending.response)
-                        .font(.caption)
-                        .lineLimit(2)
+            // Pending responses notification (supports multiple contacts)
+            if !viewModel.pendingResponses.isEmpty {
+                ForEach(Array(viewModel.pendingResponses.keys), id: \.self) { contactName in
+                    if let pending = viewModel.pendingResponses[contactName] {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("→ \(contactName) (5s...)")
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                            Text(pending.response)
+                                .font(.caption)
+                                .lineLimit(2)
 
-                    Button("Cancel") {
-                        viewModel.cancelPendingResponse()
+                            Button("Cancel") {
+                                viewModel.cancelPendingResponse(for: contactName)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.red)
+                            .controlSize(.small)
+                        }
+                        .padding(8)
+                        .background(Color.orange.opacity(0.1))
+                        .cornerRadius(8)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-                    .controlSize(.small)
                 }
-                .padding(8)
-                .background(Color.orange.opacity(0.1))
-                .cornerRadius(8)
 
                 Divider()
             }

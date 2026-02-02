@@ -6,7 +6,7 @@ import Combine
 class AppViewModel: ObservableObject {
     @Published var contacts: [Contact] = []
     @Published var isOllamaRunning = false
-    @Published var pendingResponse: PendingResponse?
+    @Published var pendingResponses: [String: PendingResponse] = [:]  // Keyed by contact name
     @Published var responseLog: [ResponseLogEntry] = []
     @Published var importProgress: ImportProgress?
     @Published var debugLog: [DebugLogEntry] = []
@@ -286,7 +286,7 @@ class AppViewModel: ObservableObject {
                 if let funnyResponse = securityAction.getFunnyResponse() {
                     log("Suspicious group name detected! Responding with humor...")
 
-                    pendingResponse = PendingResponse(
+                    pendingResponses[contactName] = PendingResponse(
                         contactName: contactName,
                         incomingMessage: detected.content,
                         response: funnyResponse,
@@ -295,8 +295,8 @@ class AppViewModel: ObservableObject {
 
                     try? await Task.sleep(nanoseconds: 5_000_000_000)
 
-                    if pendingResponse != nil {
-                        sendPendingResponse()
+                    if pendingResponses[contactName] != nil {
+                        sendPendingResponse(for: contactName)
                     }
                     return
                 }
@@ -331,7 +331,7 @@ class AppViewModel: ObservableObject {
             if let funnyResponse = try? await ImageAnalysisService.shared.analyzeRecentImage() {
                 log("\(mediaType) analyzed, sending fun response: \(funnyResponse)")
                 // For stickers/images, send the fun response directly
-                pendingResponse = PendingResponse(
+                pendingResponses[contactName] = PendingResponse(
                     contactName: contactName,
                     incomingMessage: detected.content,
                     response: funnyResponse,
@@ -341,8 +341,8 @@ class AppViewModel: ObservableObject {
                 // Wait 5 seconds then send if not cancelled
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
 
-                if pendingResponse != nil {
-                    sendPendingResponse()
+                if pendingResponses[contactName] != nil {
+                    sendPendingResponse(for: contactName)
                 }
                 return
             } else {
@@ -360,7 +360,7 @@ class AppViewModel: ObservableObject {
             ) {
                 log("Generated response: \(response.prefix(50))...")
                 // Set pending response (user has 5 seconds to cancel)
-                pendingResponse = PendingResponse(
+                pendingResponses[contactName] = PendingResponse(
                     contactName: contactName,
                     incomingMessage: detected.content,
                     response: response,
@@ -370,8 +370,8 @@ class AppViewModel: ObservableObject {
                 // Wait 5 seconds then send if not cancelled
                 try await Task.sleep(nanoseconds: 5_000_000_000)
 
-                if pendingResponse != nil {
-                    sendPendingResponse()
+                if pendingResponses[contactName] != nil {
+                    sendPendingResponse(for: contactName)
                 }
             } else {
                 log("No response generated (check message history)", isError: true)
@@ -381,8 +381,8 @@ class AppViewModel: ObservableObject {
         }
     }
 
-    func sendPendingResponse() {
-        guard let pending = pendingResponse else { return }
+    func sendPendingResponse(for contactName: String) {
+        guard let pending = pendingResponses[contactName] else { return }
 
         // Use reply mode if enabled (quotes the original message)
         // Note: Sending messages always uses the accessibility monitor
@@ -400,11 +400,16 @@ class AppViewModel: ObservableObject {
             timestamp: pending.timestamp
         ), at: 0)
 
-        pendingResponse = nil
+        pendingResponses.removeValue(forKey: contactName)
     }
 
-    func cancelPendingResponse() {
-        pendingResponse = nil
+    func cancelPendingResponse(for contactName: String) {
+        pendingResponses.removeValue(forKey: contactName)
+    }
+
+    /// Cancel all pending responses
+    func cancelAllPendingResponses() {
+        pendingResponses.removeAll()
     }
 
     /// Find a matching contact using fuzzy matching
