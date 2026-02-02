@@ -283,6 +283,12 @@ class AppViewModel: ObservableObject {
                 return
 
             case .respondWithHumor(_, _, _):
+                // Check if we should silently ignore or respond with humor
+                if SettingsManager.shared.ignoreGroupNameTricks {
+                    log("Suspicious group name detected - ignoring (silent mode)")
+                    return
+                }
+
                 if let funnyResponse = securityAction.getFunnyResponse() {
                     log("Suspicious group name detected! Responding with humor...")
 

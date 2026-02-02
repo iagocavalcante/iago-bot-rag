@@ -55,6 +55,7 @@ class SettingsManager: ObservableObject {
     private let imageAnalysisKey = "image_analysis"
     private let useReplyModeKey = "use_reply_mode"
     private let monitoringMethodKey = "monitoring_method"
+    private let ignoreGroupNameTricksKey = "ignore_group_name_tricks"
 
     // Legacy key for migration
     private let useOpenAIKey = "use_openai"
@@ -158,6 +159,13 @@ class SettingsManager: ObservableObject {
         }
     }
 
+    /// Whether to silently ignore suspicious group name changes (instead of responding with humor)
+    @Published var ignoreGroupNameTricks: Bool {
+        didSet {
+            defaults.set(ignoreGroupNameTricks, forKey: ignoreGroupNameTricksKey)
+        }
+    }
+
     // MARK: - Initialization
 
     init() {
@@ -172,6 +180,7 @@ class SettingsManager: ObservableObject {
         self.audioTranscription = defaults.bool(forKey: audioTranscriptionKey)
         self.imageAnalysis = defaults.bool(forKey: imageAnalysisKey)
         self.useReplyMode = defaults.bool(forKey: useReplyModeKey)
+        self.ignoreGroupNameTricks = defaults.object(forKey: ignoreGroupNameTricksKey) == nil ? true : defaults.bool(forKey: ignoreGroupNameTricksKey)  // Default to true (ignore)
 
         // Monitoring method
         if let methodRaw = defaults.string(forKey: monitoringMethodKey),
