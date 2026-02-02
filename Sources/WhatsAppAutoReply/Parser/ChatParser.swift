@@ -11,7 +11,7 @@ class ChatParser {
     private let dateFormatter4: DateFormatter  // 4-digit year
     private let dateFormatter2: DateFormatter  // 2-digit year
 
-    init(userName: String = "Iago Cavalcante") {
+    init(userName: String = SettingsManager.shared.userName) {
         self.userName = userName
 
         self.dateFormatter4 = DateFormatter()

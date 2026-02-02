@@ -49,7 +49,7 @@ class OllamaClient {
         return responseText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    func buildPrompt(contactName: String, examples: [Message], newMessage: String, userName: String = "Iago Cavalcante") -> String {
+    func buildPrompt(contactName: String, examples: [Message], newMessage: String, userName: String = SettingsManager.shared.userName) -> String {
         var prompt = """
         You are \(userName). Respond exactly as he would based on these example conversations.
         Your responses should be in Portuguese (Brazilian), casual, short (1-2 sentences max).

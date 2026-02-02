@@ -173,7 +173,7 @@ class SettingsManager: ObservableObject {
         self.openAIModel = defaults.string(forKey: openAIModelKey) ?? "gpt-4o-mini"
         self.maritacaKey = defaults.string(forKey: maritacaKeyKey) ?? ""
         self.maritacaModel = defaults.string(forKey: maritacaModelKey) ?? "sabia-3"
-        self.userName = defaults.string(forKey: userNameKey) ?? "Iago Cavalcante"
+        self.userName = defaults.string(forKey: userNameKey) ?? "User"
         self.smartResponse = defaults.object(forKey: smartResponseKey) == nil ? true : defaults.bool(forKey: smartResponseKey)
         self.useRAG = defaults.bool(forKey: useRAGKey)
         self.groupTopicParticipation = defaults.bool(forKey: groupTopicParticipationKey)

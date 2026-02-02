@@ -831,8 +831,10 @@ class ResponseGenerator {
     private func cleanResponse(_ response: String) -> String {
         var cleaned = response
 
-        // Remove self-references
-        let prefixes = ["Iago Cavalcante:", "Iago:", "Me:"]
+        // Remove self-references (dynamically built from settings)
+        let userName = settings.userName
+        let firstName = userName.split(separator: " ").first.map(String.init) ?? userName
+        let prefixes = ["\(userName):", "\(firstName):", "Me:"]
         for prefix in prefixes {
             if cleaned.hasPrefix(prefix) {
                 cleaned = String(cleaned.dropFirst(prefix.count))
