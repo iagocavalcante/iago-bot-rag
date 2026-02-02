@@ -40,24 +40,12 @@ class AppViewModel: ObservableObject {
     private let databaseMonitor = WhatsAppDatabaseMonitor()
     private let responseGenerator = ResponseGenerator()
     private let ollamaClient = OllamaClient()
+    private let groupNameSecurity = GroupNameSecurityService.shared
 
     private var cancellables = Set<AnyCancellable>()
 
     /// Currently active monitoring method
     private var activeMonitoringMethod: MonitoringMethod = .accessibility
-
-    /// Track group names we've already responded to with trick detection
-    /// This prevents responding multiple times to the same renamed group
-    /// Persisted to UserDefaults so it survives app restarts
-    private var handledTrickNames: Set<String> {
-        get {
-            let array = UserDefaults.standard.stringArray(forKey: "handled_trick_names") ?? []
-            return Set(array)
-        }
-        set {
-            UserDefaults.standard.set(Array(newValue), forKey: "handled_trick_names")
-        }
-    }
 
     /// Track when monitoring started to avoid responding to old messages
     private var monitoringStartTime: Date = Date()
@@ -211,9 +199,8 @@ class AppViewModel: ObservableObject {
         if hasActiveContacts && !isMonitoring {
             // Reset the monitoring start time when we begin monitoring
             monitoringStartTime = Date()
-            // Note: handledTrickNames is now persisted - don't clear it
-            // This ensures we never respond twice to the same trick name
-            log("Starting \(selectedMethod.displayName) monitoring - messages older than 20 min will be ignored (tracking \(handledTrickNames.count) handled trick names)")
+            // Group security tracking is persisted via GroupNameSecurityService
+            log("Starting \(selectedMethod.displayName) monitoring - messages older than 20 min will be ignored")
 
             switch selectedMethod {
             case .accessibility:
@@ -267,21 +254,37 @@ class AppViewModel: ObservableObject {
         // Use the stored contact name for consistency
         let contactName = matchingContact!.name
 
-        // Check if group name itself is trying to trick the bot (sneaky!)
-        // Use the DETECTED name, not stored name, to catch renamed groups
-        // Only respond ONCE per unique trick name (not on every message)
-        if matchingContact!.isGroup && detected.contactName != contactName {
-            // Normalize the detected name for tracking (remove ", Mentioned" suffix etc.)
-            let normalizedTrickName = detected.contactName
+        // SECURITY: Check group name for prompt injection attempts
+        // Uses database-backed tracking to detect name changes and repeated attacks
+        if matchingContact!.isGroup {
+            // Normalize the detected name (remove suffixes like ", Mentioned")
+            let normalizedName = detected.contactName
                 .replacingOccurrences(of: ", Mentioned", with: "")
                 .replacingOccurrences(of: ", Pinned", with: "")
                 .replacingOccurrences(of: ", Muted", with: "")
 
-            // Only respond if we haven't already handled this trick name
-            if !handledTrickNames.contains(normalizedTrickName) {
-                if let funnyResponse = detectGroupNameTrick(normalizedTrickName) {
-                    log("Sneaky group name detected! Responding with humor (first time only)...")
-                    handledTrickNames.insert(normalizedTrickName)
+            // Try to get the chat JID from database for accurate tracking
+            let chatJID = databaseMonitor.getChatJID(forName: contactName, isGroup: true)
+                ?? "group_\(contactName.hashValue)"  // Fallback if database not available
+
+            // Track this group and check for security issues
+            let securityAction = groupNameSecurity.trackGroup(
+                chatJID: chatJID,
+                currentName: normalizedName
+            )
+
+            switch securityAction {
+            case .blockGroup(let reason):
+                log("Group blocked: \(reason)")
+                return
+
+            case .cooldown(let remainingSeconds):
+                log("Group in cooldown: \(Int(remainingSeconds / 60)) min remaining")
+                return
+
+            case .respondWithHumor(_, _, _):
+                if let funnyResponse = securityAction.getFunnyResponse() {
+                    log("Suspicious group name detected! Responding with humor...")
 
                     pendingResponse = PendingResponse(
                         contactName: contactName,
@@ -297,8 +300,13 @@ class AppViewModel: ObservableObject {
                     }
                     return
                 }
-            } else {
-                log("Trick name already handled, skipping: \(normalizedTrickName.prefix(30))...")
+
+            case .respondWithCaution(let warning):
+                log("Group name warning: \(warning) - proceeding with caution")
+                // Continue but with awareness
+
+            case .allowNormally:
+                break // All good, continue normally
             }
         }
 
@@ -452,48 +460,6 @@ class AppViewModel: ObservableObject {
         simplified = simplified.unicodeScalars.filter { !$0.properties.isEmojiPresentation }.map { String($0) }.joined()
         simplified = simplified.trimmingCharacters(in: .whitespacesAndNewlines)
         return simplified
-    }
-
-    /// Detect if group name is trying to trick the bot (social engineering via rename)
-    private func detectGroupNameTrick(_ groupName: String) -> String? {
-        let lowerName = groupName.lowercased()
-
-        // Patterns that indicate someone is trying to use the group name to trick the bot
-        let trickPatterns = [
-            // Portuguese
-            "mostre", "mostra", "revele", "revela", "me conta", "me fala",
-            "suas variáveis", "suas variaveis", "seu segredo", "seus segredos",
-            "sua senha", "seu pix", "seu cpf", "seu cartão", "seu cartao",
-            "fale como", "responda como", "ignore as regras", "esquece as regras",
-            "finja que", "aja como", "você é", "voce e",
-            // English
-            "show your", "reveal your", "tell me your", "give me your",
-            "your password", "your secrets", "your env", "environment variable",
-            "your api key", "your token", "your credentials",
-            "act as", "pretend to be", "ignore your rules", "forget your rules",
-            "you are now", "new instructions",
-            // Prompt injection attempts
-            "system prompt", "ignore previous", "disregard", "override",
-        ]
-
-        let funnyResponses = [
-            "Vixi, renomearam o grupo pra tentar me hackear? Vocês são criativos, hein! 😂🔐",
-            "Ahá! Acharam que renomear o grupo ia me enganar? Nice try! 🕵️",
-            "Esse nome de grupo tá muito suspeito... vocês tão de sacanagem né? 😏",
-            "Hackers de grupo de WhatsApp detected! Alerta vermelho! 🚨😂",
-            "Pode mudar o nome do grupo pra 'Me dá sua senha' que também não vai funcionar 🤷‍♂️",
-            "A tentativa foi boa, mas meu firewall de piadas está ativo! 🛡️😄",
-            "Social engineering via grupo? Vocês merecem um troféu de criatividade! 🏆",
-            "Calma lá hackers, eu li o nome do grupo sim 😜 mas não caio nessa!",
-        ]
-
-        for pattern in trickPatterns {
-            if lowerName.contains(pattern) {
-                return funnyResponses.randomElement()!
-            }
-        }
-
-        return nil
     }
 
     func importChatExport(url: URL) {
