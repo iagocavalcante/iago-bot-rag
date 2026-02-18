@@ -11,9 +11,11 @@ struct WhatsAppAutoReplyApp: App {
     }
 }
 
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
     var popover: NSPopover?
+    private let dependencies = AppDependencies()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMenuBar()
@@ -30,7 +32,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         popover = NSPopover()
         popover?.contentSize = NSSize(width: 300, height: 400)
         popover?.behavior = .transient
-        popover?.contentViewController = NSHostingController(rootView: MenuBarView())
+        popover?.contentViewController = NSHostingController(
+            rootView: MenuBarView(
+                viewModel: dependencies.appViewModel,
+                settings: dependencies.settings,
+                ragStats: dependencies.ragManager
+            )
+        )
     }
 
     @objc func togglePopover() {

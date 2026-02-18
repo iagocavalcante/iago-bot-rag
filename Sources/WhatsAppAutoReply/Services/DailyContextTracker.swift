@@ -4,7 +4,7 @@ import Foundation
 class DailyContextTracker {
     static let shared = DailyContextTracker()
 
-    private let dbManager: DatabaseManager
+    private let dbManager: any DatabaseManaging
 
     /// Cache of today's context per contact (contactId -> DailyContext)
     private var contextCache: [Int64: DailyContext] = [:]
@@ -12,7 +12,7 @@ class DailyContextTracker {
     /// Last refresh date (to invalidate cache at midnight)
     private var lastRefreshDate: Date?
 
-    init(dbManager: DatabaseManager = .shared) {
+    init(dbManager: any DatabaseManaging = DatabaseManager.shared) {
         self.dbManager = dbManager
     }
 
@@ -198,14 +198,6 @@ class DailyContextTracker {
     }
 
     private func extractPlans(from text: String, into context: inout DailyContext) {
-        // Time-related patterns
-        let timePatterns = [
-            "hoje", "agora", "daqui a pouco", "mais tarde",
-            "de manhã", "de tarde", "de noite", "à noite",
-            "almoço", "jantar", "reunião", "meeting",
-            "às \\d+", "\\d+h", "\\d+:\\d+"
-        ]
-
         // Event keywords
         let eventKeywords = [
             "reunião", "meeting", "call", "ligação",

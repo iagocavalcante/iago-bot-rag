@@ -2,12 +2,23 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct MenuBarView: View {
-    @StateObject private var viewModel = AppViewModel()
-    @StateObject private var settings = SettingsManager.shared
+    @ObservedObject private var viewModel: AppViewModel
+    @ObservedObject private var settings: SettingsManager
+    private let ragStats: any RAGStatsProviding
     @State private var showingImporter = false
     @State private var showingLog = false
     @State private var showingDebugLog = false
     @State private var showingSettings = false
+
+    init(
+        viewModel: AppViewModel,
+        settings: SettingsManager,
+        ragStats: any RAGStatsProviding
+    ) {
+        self.viewModel = viewModel
+        self.settings = settings
+        self.ragStats = ragStats
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -181,13 +192,14 @@ struct MenuBarView: View {
             DebugLogView(entries: viewModel.debugLog)
         }
         .sheet(isPresented: $showingSettings) {
-            SettingsView()
+            SettingsView(settings: settings, ragStats: ragStats)
         }
     }
 }
 
 struct SettingsView: View {
-    @StateObject private var settings = SettingsManager.shared
+    @ObservedObject var settings: SettingsManager
+    let ragStats: any RAGStatsProviding
     @Environment(\.dismiss) var dismiss
     @State private var showingAPIKey = false
 
@@ -407,7 +419,7 @@ struct SettingsView: View {
                                 .foregroundColor(.secondary)
 
                             if settings.useRAG {
-                                Text("Embeddings: \(RAGManager.shared.embeddingCount)")
+                                Text("Embeddings: \(ragStats.embeddingCount)")
                                     .font(.caption2)
                                     .foregroundColor(.blue)
                             }

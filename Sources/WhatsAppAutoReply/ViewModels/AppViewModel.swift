@@ -35,20 +35,19 @@ class AppViewModel: ObservableObject {
         }
     }
 
-    private let dbManager = DatabaseManager.shared
-    private let accessibilityMonitor = WhatsAppMonitor()
-    private let databaseMonitor = WhatsAppDatabaseMonitor()
-    private let responseGenerator = ResponseGenerator()
-    private let ollamaClient = OllamaClient()
-    private let groupNameSecurity = GroupNameSecurityService.shared
+    private let dbManager: any DatabaseManaging
+    private let accessibilityMonitor: any AccessibilityMonitoring
+    private let databaseMonitor: any DatabaseMonitoring
+    private let responseGenerator: any ResponseGenerating
+    private let ollamaClient: any OllamaAvailabilityChecking
+    private let groupNameSecurity: GroupNameSecurityService
+    private let settings: any SettingsProviding
+    private let audioTranscriptionService: any AudioTranscriptionServicing
+    private let imageAnalysisService: any ImageAnalysisServicing
+    private let chatImportUseCase: any ChatImporting
+    private let monitoringCoordinator: any MonitoringCoordinating
 
     private var cancellables = Set<AnyCancellable>()
-
-    /// Currently active monitoring method
-    private var activeMonitoringMethod: MonitoringMethod = .accessibility
-
-    /// Track when monitoring started to avoid responding to old messages
-    private var monitoringStartTime: Date = Date()
 
     /// Maximum age of messages to respond to (in seconds)
     /// Messages older than this will be ignored
@@ -70,18 +69,53 @@ class AppViewModel: ObservableObject {
     }
 
     var hasAccessibilityPermission: Bool {
-        accessibilityMonitor.hasAccessibilityPermission
+        monitoringCoordinator.hasAccessibilityPermission
     }
 
     var isWhatsAppRunning: Bool {
-        accessibilityMonitor.whatsAppRunning
+        monitoringCoordinator.isWhatsAppRunning
     }
 
     var isDatabaseAccessible: Bool {
-        databaseMonitor.isDatabaseAccessible()
+        monitoringCoordinator.isDatabaseAccessible
     }
 
-    init() {
+    init(
+        dbManager: any DatabaseManaging = DatabaseManager.shared,
+        accessibilityMonitor: any AccessibilityMonitoring = WhatsAppMonitor(),
+        databaseMonitor: any DatabaseMonitoring = WhatsAppDatabaseMonitor(),
+        responseGenerator: any ResponseGenerating = ResponseGenerator(),
+        ollamaClient: any OllamaAvailabilityChecking = OllamaClient(),
+        groupNameSecurity: GroupNameSecurityService = .shared,
+        settings: any SettingsProviding = SettingsManager.shared,
+        audioTranscriptionService: any AudioTranscriptionServicing = AudioTranscriptionService.shared,
+        imageAnalysisService: any ImageAnalysisServicing = ImageAnalysisService.shared,
+        ragManager: any RAGEmbeddingGenerating = RAGManager.shared,
+        chatImportUseCase: (any ChatImporting)? = nil,
+        monitoringCoordinator: (any MonitoringCoordinating)? = nil
+    ) {
+        self.dbManager = dbManager
+        self.accessibilityMonitor = accessibilityMonitor
+        self.databaseMonitor = databaseMonitor
+        self.responseGenerator = responseGenerator
+        self.ollamaClient = ollamaClient
+        self.groupNameSecurity = groupNameSecurity
+        self.settings = settings
+        self.audioTranscriptionService = audioTranscriptionService
+        self.imageAnalysisService = imageAnalysisService
+        self.chatImportUseCase = chatImportUseCase
+            ?? ChatImportUseCase(
+                dbManager: dbManager,
+                ragManager: ragManager,
+                settings: settings
+            )
+        self.monitoringCoordinator = monitoringCoordinator
+            ?? MonitoringCoordinator(
+                accessibilityMonitor: accessibilityMonitor,
+                databaseMonitor: databaseMonitor,
+                settings: settings
+            )
+
         loadContacts()
         setupMonitor()
         checkOllama()
@@ -108,59 +142,32 @@ class AppViewModel: ObservableObject {
     }
 
     var monitorDebugInfo: String {
-        switch activeMonitoringMethod {
-        case .accessibility:
-            return accessibilityMonitor.debugInfo
-        case .database:
-            return databaseMonitor.debugInfo
-        }
+        monitoringCoordinator.debugInfo
     }
 
     var isMonitoring: Bool {
-        switch activeMonitoringMethod {
-        case .accessibility:
-            return accessibilityMonitor.isMonitoring
-        case .database:
-            return databaseMonitor.isMonitoring
-        }
+        monitoringCoordinator.isMonitoring
     }
 
     func setupMonitor() {
-        // Setup accessibility monitor callbacks
-        accessibilityMonitor.onNewMessage = { [weak self] detected in
-            Task { @MainActor in
-                self?.log("Message detected from '\(detected.contactName)': \(detected.content.prefix(50))...")
-                await self?.handleNewMessage(detected)
+        monitoringCoordinator.setup(
+            onDetectedMessage: { [weak self] detected in
+                Task { @MainActor in
+                    self?.log("Message detected from '\(detected.contactName)': \(detected.content.prefix(50))...")
+                    await self?.handleNewMessage(detected)
+                }
+            },
+            onDebugLog: { [weak self] message in
+                Task { @MainActor in
+                    self?.log(message)
+                }
+            },
+            onPeriodicCheck: { [weak self] in
+                Task { @MainActor in
+                    self?.checkOllama()
+                }
             }
-        }
-
-        accessibilityMonitor.onDebugLog = { [weak self] msg in
-            Task { @MainActor in
-                self?.log("[AccMonitor] \(msg)")
-            }
-        }
-
-        // Setup database monitor callbacks
-        databaseMonitor.onNewMessage = { [weak self] detected in
-            Task { @MainActor in
-                self?.log("Message detected from '\(detected.contactName)': \(detected.content.prefix(50))...")
-                await self?.handleNewMessage(detected)
-            }
-        }
-
-        databaseMonitor.onDebugLog = { [weak self] msg in
-            Task { @MainActor in
-                self?.log("[DBMonitor] \(msg)")
-            }
-        }
-
-        // Check permissions periodically
-        Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.accessibilityMonitor.checkPermissions()
-                self?.checkOllama()
-            }
-        }
+        )
     }
 
     func toggleAutoReply(for contact: Contact) {
@@ -183,60 +190,33 @@ class AppViewModel: ObservableObject {
 
     private func updateMonitoringState() {
         let hasActiveContacts = contacts.contains { $0.autoReplyEnabled }
-        let selectedMethod = SettingsManager.shared.monitoringMethod
 
-        // Stop the other monitor if method changed
-        if selectedMethod != activeMonitoringMethod {
-            switch activeMonitoringMethod {
-            case .accessibility:
-                accessibilityMonitor.stopMonitoring()
-            case .database:
-                databaseMonitor.stopMonitoring()
-            }
-            activeMonitoringMethod = selectedMethod
-        }
-
-        if hasActiveContacts && !isMonitoring {
-            // Reset the monitoring start time when we begin monitoring
-            monitoringStartTime = Date()
-            // Group security tracking is persisted via GroupNameSecurityService
-            log("Starting \(selectedMethod.displayName) monitoring - messages older than 20 min will be ignored")
-
-            switch selectedMethod {
-            case .accessibility:
-                accessibilityMonitor.startMonitoring()
-            case .database:
-                databaseMonitor.startMonitoring()
-            }
-        } else if !hasActiveContacts && isMonitoring {
-            switch activeMonitoringMethod {
-            case .accessibility:
-                accessibilityMonitor.stopMonitoring()
-            case .database:
-                databaseMonitor.stopMonitoring()
-            }
+        switch monitoringCoordinator.updateMonitoringState(hasActiveContacts: hasActiveContacts) {
+        case .started(let method):
+            log("Starting \(method.displayName) monitoring - messages older than 20 min will be ignored")
+        case .stopped:
+            log("Monitoring stopped (no active contacts)")
+        case .none:
+            break
         }
     }
 
     private func handleNewMessage(_ detected: DetectedMessage) async {
         log("Processing message from '\(detected.contactName)'")
 
-        // Check if message was detected within the valid time window
-        // Skip messages that are too old (detected before monitoring started or older than maxMessageAge)
-        let messageAge = Date().timeIntervalSince(detected.timestamp)
-        let timeSinceMonitoringStarted = Date().timeIntervalSince(monitoringStartTime)
-
-        // Grace period: ignore messages detected in the first 5 seconds after monitoring starts
-        // This prevents responding to messages that were already visible when we started
-        if timeSinceMonitoringStarted < 5 {
+        switch monitoringCoordinator.messageEligibility(
+            timestamp: detected.timestamp,
+            maxAge: maxMessageAge,
+            gracePeriod: 5
+        ) {
+        case .inGracePeriod:
             log("Skipping message - monitoring just started (grace period)")
             return
-        }
-
-        // Skip messages older than maxMessageAge (20 minutes)
-        if messageAge > maxMessageAge {
-            log("Skipping old message - detected \(Int(messageAge))s ago (max: \(Int(maxMessageAge))s)")
+        case .tooOld(let age):
+            log("Skipping old message - detected \(Int(age))s ago (max: \(Int(maxMessageAge))s)")
             return
+        case .eligible:
+            break
         }
 
         // Check if this contact has auto-reply enabled
@@ -284,7 +264,7 @@ class AppViewModel: ObservableObject {
 
             case .respondWithHumor(_, _, _):
                 // Check if we should silently ignore or respond with humor
-                if SettingsManager.shared.ignoreGroupNameTricks {
+                if settings.ignoreGroupNameTricks {
                     log("Suspicious group name detected - ignoring (silent mode)")
                     return
                 }
@@ -320,7 +300,7 @@ class AppViewModel: ObservableObject {
         var messageContent = detected.content
         if accessibilityMonitor.isAudioMessage(detected.content) {
             log("Audio message detected, attempting transcription...")
-            if let transcription = try? await AudioTranscriptionService.shared.transcribeRecentAudio() {
+            if let transcription = try? await audioTranscriptionService.transcribeRecentAudio() {
                 log("Audio transcribed: \(transcription.prefix(50))...")
                 messageContent = "[Áudio transcrito] \(transcription)"
             } else {
@@ -334,7 +314,7 @@ class AppViewModel: ObservableObject {
             let mediaType = accessibilityMonitor.isStickerMessage(detected.content) ? "Sticker" : "Image"
             log("\(mediaType) detected, attempting analysis...")
 
-            if let funnyResponse = try? await ImageAnalysisService.shared.analyzeRecentImage() {
+            if let funnyResponse = try? await imageAnalysisService.analyzeRecentImage() {
                 log("\(mediaType) analyzed, sending fun response: \(funnyResponse)")
                 // For stickers/images, send the fun response directly
                 pendingResponses[contactName] = PendingResponse(
@@ -392,7 +372,7 @@ class AppViewModel: ObservableObject {
 
         // Use reply mode if enabled (quotes the original message)
         // Note: Sending messages always uses the accessibility monitor
-        if SettingsManager.shared.useReplyMode {
+        if settings.useReplyMode {
             log("Sending reply with quote (Reply Mode ON)")
             accessibilityMonitor.sendReplyMessage(pending.response, to: pending.contactName)
         } else {
@@ -476,103 +456,26 @@ class AppViewModel: ObservableObject {
     func importChatExport(url: URL) {
         log("Starting import for: \(url.lastPathComponent)")
 
-        let parser = ChatParser()
-        let dbManager = self.dbManager
-
-        // Copy file to temp while security access is active (quick operation)
-        let didStartAccess = url.startAccessingSecurityScopedResource()
-        log("Security scoped access: \(didStartAccess)")
-
-        let tempDir = FileManager.default.temporaryDirectory
-        let tempZip = tempDir.appendingPathComponent(UUID().uuidString + ".zip")
-
-        do {
-            try FileManager.default.copyItem(at: url, to: tempZip)
-            log("Copied to temp: \(tempZip.path)")
-        } catch {
-            log("Failed to copy file: \(error)", isError: true)
-            if didStartAccess { url.stopAccessingSecurityScopedResource() }
-            return
-        }
-
-        // Release security access immediately - we have the copy now
-        if didStartAccess {
-            url.stopAccessingSecurityScopedResource()
-        }
-
-        // Extract contact name from original URL
+        // Extract contact name from original URL for initial UI progress
         let filename = url.deletingPathExtension().lastPathComponent
         let contactName = filename.replacingOccurrences(of: "WhatsApp Chat - ", with: "")
         log("Contact name: \(contactName)")
 
-        // Show initial progress
-        self.importProgress = ImportProgress(contactName: contactName, current: 0, total: 0)
+        importProgress = ImportProgress(contactName: contactName, current: 0, total: 0)
 
-        // Capture self for logging
         let logFunc: @Sendable (String, Bool) -> Void = { [weak self] msg, isErr in
             Task { @MainActor in
                 self?.log(msg, isError: isErr)
             }
         }
+        let importUseCase = chatImportUseCase
 
-        // Do all heavy work on background thread
         Task.detached {
-            defer {
-                try? FileManager.default.removeItem(at: tempZip)
-            }
-
             do {
-                logFunc("Starting parse...", false)
-
-                // Parse on background
-                let (parsed, parseLog) = parser.parseTempZipFileWithLog(at: tempZip)
-
-                // Forward parser logs
-                for entry in parseLog {
-                    logFunc(entry, false)
-                }
-
-                logFunc("Parsed \(parsed.count) messages", false)
-
-                // Detect if this is a group chat
-                let isGroupChat = parser.isGroupChat(messages: parsed)
-                if isGroupChat {
-                    let senders = parser.getUniqueSenders(messages: parsed)
-                    logFunc("Detected GROUP chat with \(senders.count) participants", false)
-                } else {
-                    logFunc("Detected 1-on-1 chat", false)
-                }
-
-                await MainActor.run { [weak self] in
-                    self?.importProgress = ImportProgress(contactName: contactName, current: 0, total: parsed.count)
-                }
-
-                // Create or get contact
-                let contact: Contact
-                if let existing = try dbManager.getContactByName(contactName) {
-                    contact = existing
-                    logFunc("Found existing contact: \(existing.name)", false)
-                    // Update isGroup flag if needed
-                    if existing.isGroup != isGroupChat {
-                        try dbManager.updateContactIsGroup(id: existing.id, isGroup: isGroupChat)
-                        logFunc("Updated group status: \(isGroupChat)", false)
-                    }
-                } else {
-                    let id = try dbManager.insertContact(Contact(name: contactName, isGroup: isGroupChat))
-                    contact = Contact(id: id, name: contactName, isGroup: isGroupChat)
-                    logFunc("Created new contact: \(contactName) (group: \(isGroupChat))", false)
-                }
-
-                // Convert messages
-                let messages = parser.convertToMessages(
-                    parsed: parsed,
-                    contactId: contact.id,
-                    contactName: contactName
-                )
-                logFunc("Converted \(messages.count) messages", false)
-
-                // Insert with progress callback
-                try dbManager.insertMessages(messages) { current, total in
+                let result = try await importUseCase.importChatExport(
+                    url: url,
+                    log: logFunc
+                ) { current, total in
                     Task { @MainActor [weak self] in
                         self?.importProgress = ImportProgress(contactName: contactName, current: current, total: total)
                     }
@@ -581,20 +484,7 @@ class AppViewModel: ObservableObject {
                 await MainActor.run { [weak self] in
                     self?.importProgress = nil
                     self?.loadContacts()
-                    self?.log("Import complete: \(messages.count) messages for \(contactName)")
-                }
-
-                // Generate embeddings for RAG if OpenAI is configured
-                if SettingsManager.shared.isOpenAIConfigured && SettingsManager.shared.useRAG {
-                    logFunc("Starting RAG embedding generation...", false)
-                    do {
-                        try await RAGManager.shared.generateEmbeddings(for: contact.id) { current, total in
-                            logFunc("Embedding \(current)/\(total)", false)
-                        }
-                        logFunc("RAG embeddings complete", false)
-                    } catch {
-                        logFunc("RAG embedding failed: \(error)", true)
-                    }
+                    self?.log("Import complete: \(result.messageCount) messages for \(result.contactName)")
                 }
             } catch {
                 logFunc("Import failed: \(error)", true)

@@ -1,34 +1,55 @@
 import Foundation
 
 class ResponseGenerator {
-    private let ollamaClient: OllamaClient
-    private let dbManager: DatabaseManager
-    private let settings: SettingsManager
-    private let styleAnalyzer = StyleAnalyzer()
-    private let responseDecider = ResponseDecider()
-    private let ragManager = RAGManager.shared
-    private let dailyContextTracker = DailyContextTracker.shared
+    typealias OpenAIClientFactory = (_ apiKey: String, _ model: String) -> any OpenAIChatGenerating
+    typealias MaritacaClientFactory = (_ apiKey: String, _ model: String) -> any MaritacaChatGenerating
+
+    private let ollamaClient: any OllamaGenerating
+    private let dbManager: any DatabaseManaging
+    private let settings: any ResponseGeneratorSettingsProviding
+    private let styleAnalyzer: any StyleAnalyzing
+    private let responseDecider: any ResponseDeciding
+    private let ragManager: any RAGContextSearching
+    private let dailyContextTracker: any DailyContextTracking
+    private let openAIClientFactory: OpenAIClientFactory
+    private let maritacaClientFactory: MaritacaClientFactory
 
     init(
-        ollamaClient: OllamaClient = OllamaClient(),
-        dbManager: DatabaseManager = .shared,
-        settings: SettingsManager = .shared
+        ollamaClient: any OllamaGenerating = OllamaClient(),
+        dbManager: any DatabaseManaging = DatabaseManager.shared,
+        settings: any ResponseGeneratorSettingsProviding = SettingsManager.shared,
+        styleAnalyzer: any StyleAnalyzing = StyleAnalyzer(),
+        responseDecider: any ResponseDeciding = ResponseDecider(),
+        ragManager: any RAGContextSearching = RAGManager.shared,
+        dailyContextTracker: any DailyContextTracking = DailyContextTracker.shared,
+        openAIClientFactory: @escaping OpenAIClientFactory = { apiKey, model in
+            OpenAIClient(apiKey: apiKey, model: model)
+        },
+        maritacaClientFactory: @escaping MaritacaClientFactory = { apiKey, model in
+            MaritacaClient(apiKey: apiKey, model: model)
+        }
     ) {
         self.ollamaClient = ollamaClient
         self.dbManager = dbManager
         self.settings = settings
+        self.styleAnalyzer = styleAnalyzer
+        self.responseDecider = responseDecider
+        self.ragManager = ragManager
+        self.dailyContextTracker = dailyContextTracker
+        self.openAIClientFactory = openAIClientFactory
+        self.maritacaClientFactory = maritacaClientFactory
     }
 
     /// Create OpenAI client on demand with current settings
-    private func createOpenAIClient() -> OpenAIClient? {
+    private func createOpenAIClient() -> (any OpenAIChatGenerating)? {
         guard settings.isOpenAIConfigured else { return nil }
-        return OpenAIClient(apiKey: settings.openAIKey, model: settings.openAIModel)
+        return openAIClientFactory(settings.openAIKey, settings.openAIModel)
     }
 
     /// Create Maritaca client on demand with current settings
-    private func createMaritacaClient() -> MaritacaClient? {
+    private func createMaritacaClient() -> (any MaritacaChatGenerating)? {
         guard settings.isMaritacaConfigured else { return nil }
-        return MaritacaClient(apiKey: settings.maritacaKey, model: settings.maritacaModel)
+        return maritacaClientFactory(settings.maritacaKey, settings.maritacaModel)
     }
 
     func generateResponse(for contactName: String, message: String) async throws -> String? {
@@ -167,7 +188,8 @@ class ResponseGenerator {
         dailyContextTracker.trackMessage(
             contactId: contact.id,
             content: message,
-            isFromUser: false // This is from the contact
+            isFromUser: false, // This is from the contact
+            timestamp: Date()
         )
         let todayContext = dailyContextTracker.getContextSummary(for: contact.id)
 

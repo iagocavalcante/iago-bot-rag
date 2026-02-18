@@ -4,8 +4,8 @@ import Foundation
 class GroupContextAnalyzer {
     static let shared = GroupContextAnalyzer()
 
-    private let ragManager = RAGManager.shared
-    private let settings = SettingsManager.shared
+    private let ragManager: any RAGContextSearching
+    private let settings: any SettingsProviding
 
     /// Recent messages per group (groupName -> messages)
     private var groupContexts: [String: [GroupMessage]] = [:]
@@ -18,6 +18,14 @@ class GroupContextAnalyzer {
 
     /// Minimum topic relevance score to trigger response (0.0 - 1.0)
     private let relevanceThreshold: Float = 0.45
+
+    init(
+        ragManager: any RAGContextSearching = RAGManager.shared,
+        settings: any SettingsProviding = SettingsManager.shared
+    ) {
+        self.ragManager = ragManager
+        self.settings = settings
+    }
 
     // MARK: - Message Tracking
 

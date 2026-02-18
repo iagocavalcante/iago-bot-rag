@@ -2,11 +2,15 @@ import Foundation
 
 /// Decides whether a message warrants an auto-reply
 class ResponseDecider {
-    private let settings: SettingsManager
-    private let groupContextAnalyzer = GroupContextAnalyzer.shared
+    private let settings: any ResponseDeciderSettingsProviding
+    private let groupContextAnalyzer: any GroupContextAnalyzing
 
-    init(settings: SettingsManager = .shared) {
+    init(
+        settings: any ResponseDeciderSettingsProviding = SettingsManager.shared,
+        groupContextAnalyzer: any GroupContextAnalyzing = GroupContextAnalyzer.shared
+    ) {
         self.settings = settings
+        self.groupContextAnalyzer = groupContextAnalyzer
     }
 
     // MARK: - Group Topic-Based Participation

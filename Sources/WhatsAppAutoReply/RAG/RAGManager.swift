@@ -176,7 +176,7 @@ class RAGManager {
         var threads: [[Message]] = []
         var currentThread: [Message] = []
 
-        for (index, message) in messages.enumerated() {
+        for message in messages {
             if currentThread.isEmpty {
                 currentThread.append(message)
             } else {
