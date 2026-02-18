@@ -1,4 +1,4 @@
-# WhatsApp Auto-Reply Bot
+# WhatsApp Bot for macOS
 
 A macOS menu bar application that automatically responds to WhatsApp messages using AI, mimicking your personal writing style based on your chat history.
 
@@ -29,7 +29,7 @@ git clone https://github.com/IagoCavalcante/iago-bot-rag.git
 cd iago-bot-rag
 ```
 
-2. Build the project:
+2. Build the CLI binary:
 ```bash
 swift build -c release
 ```
@@ -37,6 +37,20 @@ swift build -c release
 3. Run the app:
 ```bash
 .build/release/WhatsAppAutoReply
+```
+
+### Build `.app` Bundle With Custom Logo
+
+Use this command to generate the logo, create `AppIcon.icns`, and assemble a macOS app bundle:
+
+```bash
+zsh scripts/build_app_bundle.sh
+```
+
+Output app:
+
+```bash
+.build/WhatsAppBot.app
 ```
 
 4. Grant Accessibility permissions when prompted:

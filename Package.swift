@@ -12,6 +12,9 @@ let package = Package(
             name: "WhatsAppAutoReply",
             dependencies: [
                 .product(name: "SQLite", package: "SQLite.swift")
+            ],
+            exclude: [
+                "Info.plist"
             ]
         ),
         .testTarget(
