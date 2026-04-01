@@ -5,7 +5,7 @@ let package = Package(
     name: "WhatsAppAutoReply",
     platforms: [.macOS(.v13)],
     dependencies: [
-        .package(url: "https://github.com/stephencelis/SQLite.swift.git", from: "0.15.5")
+        .package(url: "https://github.com/stephencelis/SQLite.swift.git", from: "0.16.0")
     ],
     targets: [
         .executableTarget(
