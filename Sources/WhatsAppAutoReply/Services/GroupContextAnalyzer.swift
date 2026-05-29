@@ -2,8 +2,6 @@ import Foundation
 
 /// Analyzes group chat context to determine when to participate in conversations
 class GroupContextAnalyzer {
-    static let shared = GroupContextAnalyzer()
-
     private let ragManager: any RAGContextSearching
     private let settings: any SettingsProviding
 
@@ -20,8 +18,8 @@ class GroupContextAnalyzer {
     private let relevanceThreshold: Float = 0.45
 
     init(
-        ragManager: any RAGContextSearching = RAGManager.shared,
-        settings: any SettingsProviding = SettingsManager.shared
+        ragManager: any RAGContextSearching,
+        settings: any SettingsProviding
     ) {
         self.ragManager = ragManager
         self.settings = settings

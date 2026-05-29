@@ -15,13 +15,13 @@ class ResponseGenerator {
     private let maritacaClientFactory: MaritacaClientFactory
 
     init(
-        ollamaClient: any OllamaGenerating = OllamaClient(),
-        dbManager: any DatabaseManaging = DatabaseManager.shared,
-        settings: any ResponseGeneratorSettingsProviding = SettingsManager.shared,
-        styleAnalyzer: any StyleAnalyzing = StyleAnalyzer(),
-        responseDecider: any ResponseDeciding = ResponseDecider(),
-        ragManager: any RAGContextSearching = RAGManager.shared,
-        dailyContextTracker: any DailyContextTracking = DailyContextTracker.shared,
+        ollamaClient: any OllamaGenerating,
+        dbManager: any DatabaseManaging,
+        settings: any ResponseGeneratorSettingsProviding,
+        styleAnalyzer: any StyleAnalyzing,
+        responseDecider: any ResponseDeciding,
+        ragManager: any RAGContextSearching,
+        dailyContextTracker: any DailyContextTracking,
         openAIClientFactory: @escaping OpenAIClientFactory = { apiKey, model in
             OpenAIClient(apiKey: apiKey, model: model)
         },

@@ -6,8 +6,8 @@ class ResponseDecider {
     private let groupContextAnalyzer: any GroupContextAnalyzing
 
     init(
-        settings: any ResponseDeciderSettingsProviding = SettingsManager.shared,
-        groupContextAnalyzer: any GroupContextAnalyzing = GroupContextAnalyzer.shared
+        settings: any ResponseDeciderSettingsProviding,
+        groupContextAnalyzer: any GroupContextAnalyzing
     ) {
         self.settings = settings
         self.groupContextAnalyzer = groupContextAnalyzer

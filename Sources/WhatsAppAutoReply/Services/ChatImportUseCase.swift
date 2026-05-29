@@ -9,10 +9,10 @@ final class ChatImportUseCase: ChatImporting {
     private let parserFactory: ChatParserFactory
 
     init(
-        dbManager: any DatabaseManaging = DatabaseManager.shared,
-        ragManager: any RAGEmbeddingGenerating = RAGManager.shared,
-        settings: any SettingsProviding = SettingsManager.shared,
-        parserFactory: @escaping ChatParserFactory = { ChatParser() }
+        dbManager: any DatabaseManaging,
+        ragManager: any RAGEmbeddingGenerating,
+        settings: any SettingsProviding,
+        parserFactory: @escaping ChatParserFactory
     ) {
         self.dbManager = dbManager
         self.ragManager = ragManager

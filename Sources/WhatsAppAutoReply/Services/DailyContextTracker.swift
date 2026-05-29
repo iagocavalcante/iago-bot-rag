@@ -2,8 +2,6 @@ import Foundation
 
 /// Tracks today's conversation context per contact for natural conversation flow
 class DailyContextTracker {
-    static let shared = DailyContextTracker()
-
     private let dbManager: any DatabaseManaging
 
     /// Cache of today's context per contact (contactId -> DailyContext)
@@ -12,7 +10,7 @@ class DailyContextTracker {
     /// Last refresh date (to invalidate cache at midnight)
     private var lastRefreshDate: Date?
 
-    init(dbManager: any DatabaseManaging = DatabaseManager.shared) {
+    init(dbManager: any DatabaseManaging) {
         self.dbManager = dbManager
     }
 

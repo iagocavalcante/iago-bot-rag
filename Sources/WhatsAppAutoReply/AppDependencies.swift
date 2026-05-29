@@ -56,7 +56,6 @@ final class AppDependencies {
             settings: settings,
             audioTranscriptionService: AudioTranscriptionService.shared,
             imageAnalysisService: ImageAnalysisService.shared,
-            ragManager: ragManager,
             chatImportUseCase: chatImportUseCase,
             monitoringCoordinator: monitoringCoordinator
         )

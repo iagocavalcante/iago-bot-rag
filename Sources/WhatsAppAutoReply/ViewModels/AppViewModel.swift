@@ -81,18 +81,17 @@ class AppViewModel: ObservableObject {
     }
 
     init(
-        dbManager: any DatabaseManaging = DatabaseManager.shared,
-        accessibilityMonitor: any AccessibilityMonitoring = WhatsAppMonitor(),
-        databaseMonitor: any DatabaseMonitoring = WhatsAppDatabaseMonitor(),
-        responseGenerator: any ResponseGenerating = ResponseGenerator(),
-        ollamaClient: any OllamaAvailabilityChecking = OllamaClient(),
-        groupNameSecurity: GroupNameSecurityService = .shared,
-        settings: any SettingsProviding = SettingsManager.shared,
-        audioTranscriptionService: any AudioTranscriptionServicing = AudioTranscriptionService.shared,
-        imageAnalysisService: any ImageAnalysisServicing = ImageAnalysisService.shared,
-        ragManager: any RAGEmbeddingGenerating = RAGManager.shared,
-        chatImportUseCase: (any ChatImporting)? = nil,
-        monitoringCoordinator: (any MonitoringCoordinating)? = nil
+        dbManager: any DatabaseManaging,
+        accessibilityMonitor: any AccessibilityMonitoring,
+        databaseMonitor: any DatabaseMonitoring,
+        responseGenerator: any ResponseGenerating,
+        ollamaClient: any OllamaAvailabilityChecking,
+        groupNameSecurity: GroupNameSecurityService,
+        settings: any SettingsProviding,
+        audioTranscriptionService: any AudioTranscriptionServicing,
+        imageAnalysisService: any ImageAnalysisServicing,
+        chatImportUseCase: any ChatImporting,
+        monitoringCoordinator: any MonitoringCoordinating
     ) {
         self.dbManager = dbManager
         self.accessibilityMonitor = accessibilityMonitor
@@ -104,17 +103,7 @@ class AppViewModel: ObservableObject {
         self.audioTranscriptionService = audioTranscriptionService
         self.imageAnalysisService = imageAnalysisService
         self.chatImportUseCase = chatImportUseCase
-            ?? ChatImportUseCase(
-                dbManager: dbManager,
-                ragManager: ragManager,
-                settings: settings
-            )
         self.monitoringCoordinator = monitoringCoordinator
-            ?? MonitoringCoordinator(
-                accessibilityMonitor: accessibilityMonitor,
-                databaseMonitor: databaseMonitor,
-                settings: settings
-            )
 
         loadContacts()
         setupMonitor()
